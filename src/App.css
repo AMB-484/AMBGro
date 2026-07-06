@@ -35,6 +35,7 @@
   grid-template-columns: 340px 1fr;
   grid-template-areas:
     'inputs chart'
+    'records chart'
     'results chart';
   gap: 16px;
   margin-top: 16px;
@@ -43,11 +44,15 @@
 .inputs {
   grid-area: inputs;
 }
+.records {
+  grid-area: records;
+}
 .results {
   grid-area: results;
 }
 .chart-panel {
   grid-area: chart;
+  align-self: start;
 }
 
 @media (max-width: 900px) {
@@ -55,6 +60,7 @@
     grid-template-columns: 1fr;
     grid-template-areas:
       'inputs'
+      'records'
       'chart'
       'results';
   }
@@ -145,6 +151,107 @@ input {
 input:focus {
   outline: 2px solid var(--accent-border);
   border-color: var(--accent);
+}
+input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.segmented button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.select {
+  width: 100%;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text-h);
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.new-patient {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.new-patient input {
+  flex: 1;
+  min-width: 140px;
+}
+.hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-basis: 100%;
+}
+.record-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+button.primary {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+button.primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+button.danger {
+  font: inherit;
+  font-size: 13px;
+  color: var(--outer);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+button.link {
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 6px;
+}
+button.link:hover {
+  color: var(--outer);
+}
+
+.visits-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 4px;
+}
+.visits-table th {
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  padding: 4px 6px;
+}
+.visits-table td {
+  padding: 6px 6px;
+  border-bottom: 1px solid var(--grid);
+  color: var(--text-h);
+}
+.visits-table td.muted {
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 .age-readout {

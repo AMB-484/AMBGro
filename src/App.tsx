@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   assess,
   bmiFrom,
@@ -14,6 +14,13 @@ import { GrowthChart } from './components/GrowthChart';
 import type { PlottedPoint } from './components/GrowthChart';
 import { exportChartPng, exportReportPdf, exportCsv } from './export/chartExport';
 import type { CsvVisit, ReportMeta } from './export/chartExport';
+import {
+  loadPatients,
+  savePatients,
+  sortedVisits,
+  uid,
+} from './store/patients';
+import type { Patient } from './store/patients';
 import './App.css';
 
 const APP_NAME = 'GrowthTrack';
@@ -39,6 +46,12 @@ function fmtCentile(c: number): string {
   return c.toFixed(1);
 }
 
+function valueForMeasure(measure: Measure, h: number | null, w: number | null): number | null {
+  if (measure === 'height') return h;
+  if (measure === 'weight') return w;
+  return h && w ? bmiFrom(w, h) : null;
+}
+
 export default function App() {
   const [sex, setSex] = useState<Sex>('male');
   const [ageMode, setAgeMode] = useState<'dob' | 'age'>('dob');
@@ -50,6 +63,26 @@ export default function App() {
   const [weight, setWeight] = useState('');
   const [chartMeasure, setChartMeasure] = useState<Measure>('height');
   const chartRef = useRef<HTMLDivElement>(null);
+
+  // ---- patient records ----
+  const [patients, setPatients] = useState<Patient[]>(() => loadPatients());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [newName, setNewName] = useState('');
+  const selectedPatient = patients.find((p) => p.id === selectedId) ?? null;
+
+  useEffect(() => {
+    savePatients(patients);
+  }, [patients]);
+
+  // when a patient is selected, drive sex/dob from the record
+  useEffect(() => {
+    if (selectedPatient) {
+      setSex(selectedPatient.sex);
+      setDob(selectedPatient.dob);
+      setAgeMode('dob');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId]);
 
   const ageMonths = useMemo<number | null>(() => {
     if (ageMode === 'dob') {
@@ -88,8 +121,31 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ageValid, ageMonths, sex, heightCm, weightKg, bmiVal]);
 
-  // chart window: infants on a 0-2y month axis, older children on a 2-20y year axis
-  const infantChart = ageMonths != null && ageMonths < BOUNDARY_MONTHS;
+  // longitudinal points: saved visits for a selected patient, else the live entry
+  const chartPoints: PlottedPoint[] = useMemo(() => {
+    if (selectedPatient) {
+      return sortedVisits(selectedPatient)
+        .map((v) => {
+          const am = ageMonthsFromDates(new Date(selectedPatient.dob), new Date(v.date));
+          const val = valueForMeasure(chartMeasure, v.heightCm, v.weightKg);
+          return val != null && am >= 0 && am <= MAX_AGE_MONTHS
+            ? ({ age: am, value: val } as PlottedPoint)
+            : null;
+        })
+        .filter((p): p is PlottedPoint => p !== null);
+    }
+    if (!ageValid || ageMonths == null) return [];
+    const v = values[chartMeasure];
+    return v == null ? [] : [{ age: ageMonths, value: v }];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPatient, patients, chartMeasure, ageValid, ageMonths, heightCm, weightKg, bmiVal]);
+
+  // chart window based on the most relevant age (latest visit, or the live entry)
+  const refAge =
+    selectedPatient && chartPoints.length
+      ? Math.max(...chartPoints.map((p) => p.age))
+      : ageMonths;
+  const infantChart = refAge != null && refAge < BOUNDARY_MONTHS;
   const [minAge, maxAge] = infantChart ? [0, BOUNDARY_MONTHS] : [BOUNDARY_MONTHS, MAX_AGE_MONTHS];
   const xUnit: 'months' | 'years' = infantChart ? 'months' : 'years';
   const measureMeta = MEASURES.find((m) => m.key === chartMeasure)!;
@@ -99,21 +155,52 @@ export default function App() {
     [chartMeasure, sex, minAge, maxAge],
   );
 
-  const chartPoints: PlottedPoint[] = useMemo(() => {
-    if (!ageValid || ageMonths == null) return [];
-    const v = values[chartMeasure];
-    if (v == null) return [];
-    return [{ age: ageMonths, value: v }];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ageValid, ageMonths, chartMeasure, heightCm, weightKg, bmiVal]);
-
   const ageOutOfRange = ageMonths != null && ageMonths > MAX_AGE_MONTHS;
-
   const hasResults = Object.keys(assessments).length > 0;
+  const hasMeasurement = heightCm != null || weightKg != null;
   const sourceLabel = ageMonths != null && ageMonths < BOUNDARY_MONTHS ? 'WHO' : 'CDC';
-  const fileDate = ageMode === 'dob' ? visit : today;
-  const fileBase = `growth_${sex}_${fileDate}`;
+  const patientLocked = selectedPatient != null;
 
+  const nameSlug = selectedPatient
+    ? selectedPatient.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()
+    : sex;
+  const fileBase = `growth_${nameSlug}_${ageMode === 'dob' ? visit : today}`;
+
+  // ---- record actions ----
+  const createPatient = () => {
+    if (!newName.trim() || !dob) return;
+    const p: Patient = { id: uid(), name: newName.trim(), sex, dob, visits: [] };
+    setPatients((prev) => [...prev, p]);
+    setSelectedId(p.id);
+    setNewName('');
+  };
+
+  const saveVisit = () => {
+    if (!selectedPatient || !hasMeasurement) return;
+    const v = { id: uid(), date: visit, heightCm, weightKg };
+    setPatients((prev) =>
+      prev.map((p) => (p.id === selectedPatient.id ? { ...p, visits: [...p.visits, v] } : p)),
+    );
+  };
+
+  const deleteVisit = (visitId: string) => {
+    if (!selectedPatient) return;
+    setPatients((prev) =>
+      prev.map((p) =>
+        p.id === selectedPatient.id
+          ? { ...p, visits: p.visits.filter((v) => v.id !== visitId) }
+          : p,
+      ),
+    );
+  };
+
+  const deletePatient = () => {
+    if (!selectedPatient) return;
+    setPatients((prev) => prev.filter((p) => p.id !== selectedPatient.id));
+    setSelectedId(null);
+  };
+
+  // ---- exports ----
   const getSvg = () => chartRef.current?.querySelector('svg') as SVGSVGElement | null;
 
   const buildReportMeta = (): ReportMeta => ({
@@ -122,7 +209,8 @@ export default function App() {
     sex: sex[0].toUpperCase() + sex.slice(1),
     ageLabel: ageMonths != null ? `${formatAge(ageMonths)} (${ageMonths.toFixed(2)} mo)` : '—',
     dateLabel:
-      ageMode === 'dob' ? `DOB ${dob} · visit ${visit}` : 'Age entered directly',
+      (selectedPatient ? `${selectedPatient.name} · ` : '') +
+      (ageMode === 'dob' ? `DOB ${dob} · visit ${visit}` : 'Age entered directly'),
     chartTitle: `${measureMeta.label}-for-age · ${sourceLabel}`,
     measurements: MEASURES.filter((m) => assessments[m.key]).map((m) => {
       const a = assessments[m.key]!;
@@ -137,22 +225,34 @@ export default function App() {
     }),
   });
 
-  const buildCsvVisit = (): CsvVisit => ({
-    date: fileDate,
-    ageMonths: ageMonths ?? 0,
-    ageLabel: ageMonths != null ? formatAge(ageMonths) : '',
-    sex,
-    heightCm,
-    weightKg,
-    bmi: bmiVal,
-    heightZ: assessments.height?.z ?? null,
-    heightCentile: assessments.height?.centile ?? null,
-    weightZ: assessments.weight?.z ?? null,
-    weightCentile: assessments.weight?.centile ?? null,
-    bmiZ: assessments.bmi?.z ?? null,
-    bmiCentile: assessments.bmi?.centile ?? null,
-    source: sourceLabel,
-  });
+  const csvForVisit = (
+    date: string,
+    am: number,
+    h: number | null,
+    w: number | null,
+    forSex: Sex,
+  ): CsvVisit => {
+    const bmi = h && w ? bmiFrom(w, h) : null;
+    const aH = h != null ? assess('height', forSex, am, h) : null;
+    const aW = w != null ? assess('weight', forSex, am, w) : null;
+    const aB = bmi != null ? assess('bmi', forSex, am, bmi) : null;
+    return {
+      date,
+      ageMonths: am,
+      ageLabel: formatAge(am),
+      sex: forSex,
+      heightCm: h,
+      weightKg: w,
+      bmi,
+      heightZ: aH?.z ?? null,
+      heightCentile: aH?.centile ?? null,
+      weightZ: aW?.z ?? null,
+      weightCentile: aW?.centile ?? null,
+      bmiZ: aB?.z ?? null,
+      bmiCentile: aB?.centile ?? null,
+      source: am < BOUNDARY_MONTHS ? 'WHO' : 'CDC',
+    };
+  };
 
   const onExportPng = () => {
     const svg = getSvg();
@@ -162,7 +262,24 @@ export default function App() {
     const svg = getSvg();
     if (svg) void exportReportPdf(svg, buildReportMeta(), `${fileBase}.pdf`);
   };
-  const onExportCsv = () => exportCsv([buildCsvVisit()], `${fileBase}.csv`);
+  const onExportCsv = () => {
+    const rows = selectedPatient
+      ? sortedVisits(selectedPatient).map((v) =>
+          csvForVisit(
+            v.date,
+            ageMonthsFromDates(new Date(selectedPatient.dob), new Date(v.date)),
+            v.heightCm,
+            v.weightKg,
+            selectedPatient.sex,
+          ),
+        )
+      : ageMonths != null
+        ? [csvForVisit(ageMode === 'dob' ? visit : today, ageMonths, heightCm, weightKg, sex)]
+        : [];
+    if (rows.length) exportCsv(rows, `${fileBase}.csv`);
+  };
+
+  const canExport = hasResults || (selectedPatient != null && selectedPatient.visits.length > 0);
 
   return (
     <div className="app">
@@ -176,15 +293,23 @@ export default function App() {
 
       <main className="layout">
         <section className="panel inputs" aria-label="Patient inputs">
-          <h2>Patient</h2>
+          <h2>Measurement</h2>
 
           <div className="field">
             <span className="field-label">Sex</span>
             <div className="segmented">
-              <button className={sex === 'male' ? 'on' : ''} onClick={() => setSex('male')}>
+              <button
+                className={sex === 'male' ? 'on' : ''}
+                disabled={patientLocked}
+                onClick={() => setSex('male')}
+              >
                 Male
               </button>
-              <button className={sex === 'female' ? 'on' : ''} onClick={() => setSex('female')}>
+              <button
+                className={sex === 'female' ? 'on' : ''}
+                disabled={patientLocked}
+                onClick={() => setSex('female')}
+              >
                 Female
               </button>
             </div>
@@ -193,10 +318,18 @@ export default function App() {
           <div className="field">
             <span className="field-label">Age input</span>
             <div className="segmented">
-              <button className={ageMode === 'dob' ? 'on' : ''} onClick={() => setAgeMode('dob')}>
+              <button
+                className={ageMode === 'dob' ? 'on' : ''}
+                disabled={patientLocked}
+                onClick={() => setAgeMode('dob')}
+              >
                 Date of birth
               </button>
-              <button className={ageMode === 'age' ? 'on' : ''} onClick={() => setAgeMode('age')}>
+              <button
+                className={ageMode === 'age' ? 'on' : ''}
+                disabled={patientLocked}
+                onClick={() => setAgeMode('age')}
+              >
                 Enter age
               </button>
             </div>
@@ -206,7 +339,13 @@ export default function App() {
             <div className="grid2">
               <label>
                 Date of birth
-                <input type="date" value={dob} max={visit} onChange={(e) => setDob(e.target.value)} />
+                <input
+                  type="date"
+                  value={dob}
+                  max={visit}
+                  disabled={patientLocked}
+                  onChange={(e) => setDob(e.target.value)}
+                />
               </label>
               <label>
                 Date of visit
@@ -248,8 +387,92 @@ export default function App() {
           </div>
         </section>
 
+        <section className="panel records" aria-label="Patient records">
+          <h2>Records</h2>
+          <div className="field">
+            <span className="field-label">Patient</span>
+            <select
+              className="select"
+              value={selectedId ?? ''}
+              onChange={(e) => setSelectedId(e.target.value || null)}
+            >
+              <option value="">— Ad-hoc (no record) —</option>
+              {patients.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.sex[0].toUpperCase()}, {p.visits.length}v)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {!selectedPatient ? (
+            <div className="new-patient">
+              <input
+                type="text"
+                placeholder="New patient name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+              />
+              <button className="primary" onClick={createPatient} disabled={!newName.trim() || !dob}>
+                Create
+              </button>
+              {!dob && <span className="hint">Set a date of birth to create a patient.</span>}
+            </div>
+          ) : (
+            <>
+              <div className="record-actions">
+                <button className="primary" onClick={saveVisit} disabled={!hasMeasurement}>
+                  Save visit
+                </button>
+                <button className="danger" onClick={deletePatient}>
+                  Delete patient
+                </button>
+              </div>
+              <table className="visits-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Age</th>
+                    <th>Ht</th>
+                    <th>Wt</th>
+                    <th aria-label="delete" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedVisits(selectedPatient).map((v) => {
+                    const am = ageMonthsFromDates(
+                      new Date(selectedPatient.dob),
+                      new Date(v.date),
+                    );
+                    return (
+                      <tr key={v.id}>
+                        <td>{v.date}</td>
+                        <td>{formatAge(am)}</td>
+                        <td>{v.heightCm ?? '—'}</td>
+                        <td>{v.weightKg ?? '—'}</td>
+                        <td>
+                          <button className="link" onClick={() => deleteVisit(v.id)} title="Delete visit">
+                            ✕
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {selectedPatient.visits.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="muted">
+                        No visits yet — enter measurements above and Save visit.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </>
+          )}
+        </section>
+
         <section className="panel results" aria-label="Results">
-          <h2>Results</h2>
+          <h2>Results {selectedPatient ? `· ${selectedPatient.name}` : ''}</h2>
           <table className="results-table">
             <thead>
               <tr>
@@ -320,16 +543,16 @@ export default function App() {
           <div className="chart-foot">
             <p className="chart-caption">
               {infantChart ? 'WHO standards, 0–2 years' : 'CDC reference, 2–20 years'} · {sex} ·
-              centile curves 3–97
+              {selectedPatient ? ` ${chartPoints.length} visit(s)` : ' centile curves 3–97'}
             </p>
             <div className="export-bar">
-              <button onClick={onExportPng} disabled={!hasResults}>
+              <button onClick={onExportPng} disabled={!canExport}>
                 PNG
               </button>
               <button onClick={onExportPdf} disabled={!hasResults}>
                 PDF
               </button>
-              <button onClick={onExportCsv} disabled={!hasResults}>
+              <button onClick={onExportCsv} disabled={!canExport}>
                 CSV
               </button>
             </div>
