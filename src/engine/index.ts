@@ -32,5 +32,5 @@ export {
   formatAge,
   DAYS_PER_MONTH,
 } from './age';
-export { midParentalHeight, heightVelocity } from './clinical';
+export { midParentalHeight, heightVelocity, correctedAgeMonths, TERM_WEEKS } from './clinical';
 export type { TargetHeight, Velocity } from './clinical';

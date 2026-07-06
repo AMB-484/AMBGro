@@ -25,8 +25,8 @@ const erfc = (x) => {
 };
 const normalCdf = (z) => 0.5 * erfc(-z / Math.SQRT2);
 
-function lookup(measure, sex, age) {
-  const series = age < refs.meta.boundaryMonths ? refs.data[measure].who[sex] : refs.data[measure].cdc[sex];
+function lookup(measure, sex, age, root = refs.data) {
+  const series = age < refs.meta.boundaryMonths ? root[measure].who[sex] : root[measure].cdc[sex];
   if (age <= series[0][0]) return series[0];
   const last = series[series.length - 1];
   if (age >= last[0]) return last;
@@ -94,6 +94,22 @@ function check(name, got, want, tol) {
   const bmi = ext[2] + 2 * ext[1];
   const pct = 90 + 10 * normalCdf((bmi - ext[2]) / ext[1]);
   check('extBMI pct at P95 + 2*sigma ~ 99.77', pct, 99.77, 0.5);
+}
+
+// 7) Down syndrome (Zemel): children are shorter, so the Down height median must
+//    sit well below the standard CDC height median at the same age.
+{
+  const stdM = lookup('height', 'male', 60)[2];
+  const downM = lookup('height', 'male', 60, refs.down)[2];
+  check('Down male height median @60mo < standard', downM < stdM ? downM : stdM + 1, downM, 1e-6);
+  check('Down male height @60mo is 3-9cm below standard', stdM - downM, 6, 4);
+}
+// 8) Corrected age for prematurity (reimplemented): 32wk infant at chrono 3mo.
+{
+  const DPM = 30.4375;
+  const chrono = 3;
+  const corrected = Math.max(0, chrono - ((40 - 32) * 7) / DPM);
+  check('corrected age 32wk @3mo chrono ~ 1.16mo', corrected, 1.16, 0.02);
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);

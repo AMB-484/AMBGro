@@ -10,7 +10,7 @@ import {
   zFromMeasurement,
 } from './lms';
 import { extendedBmiParams, gridAges, lookupLMS, sourceForAge } from './references';
-import type { Measure, Sex, Source } from './types';
+import type { Measure, RefSet, Sex, Source } from './types';
 
 export type Method = 'LMS' | 'extended-BMI';
 
@@ -41,8 +41,9 @@ export function assess(
   sex: Sex,
   ageMonths: number,
   value: number,
+  refSet: RefSet = 'standard',
 ): Assessment | null {
-  const lms = lookupLMS(measure, sex, ageMonths);
+  const lms = lookupLMS(measure, sex, ageMonths, refSet);
   if (!lms || !(value > 0)) return null;
   const source = sourceForAge(ageMonths);
 
@@ -51,8 +52,8 @@ export function assess(
   let method: Method = 'LMS';
 
   // CDC Extended BMI (2022): above the 95th percentile, use the half-normal tail
-  // so severe obesity doesn't saturate near the 99th percentile.
-  if (measure === 'bmi') {
+  // so severe obesity doesn't saturate near the 99th percentile. Standard refs only.
+  if (measure === 'bmi' && refSet === 'standard') {
     const ext = extendedBmiParams(sex, ageMonths);
     if (ext && value > ext.p95) {
       const pct = 90 + 10 * normalCdf((value - ext.p95) / ext.sigma);
@@ -100,13 +101,14 @@ export function referenceCurves(
   minAgeMonths: number,
   maxAgeMonths: number,
   centiles: number[] = DEFAULT_CENTILES,
+  refSet: RefSet = 'standard',
 ): ReferenceCurve[] {
-  const ages = gridAges(measure, sex, minAgeMonths, maxAgeMonths);
+  const ages = gridAges(measure, sex, minAgeMonths, maxAgeMonths, refSet);
   return centiles.map((centile) => {
     const z = zFromCentile(centile);
     const points: CurvePoint[] = [];
     for (const age of ages) {
-      const lms = lookupLMS(measure, sex, age);
+      const lms = lookupLMS(measure, sex, age, refSet);
       if (lms) points.push({ age, value: measurementFromZ(z, lms.L, lms.M, lms.S) });
     }
     return { centile, z, label: ordinal(centile), points };

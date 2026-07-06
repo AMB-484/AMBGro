@@ -8,10 +8,12 @@ import {
   formatAge,
   midParentalHeight,
   heightVelocity,
+  correctedAgeMonths,
+  TERM_WEEKS,
   BOUNDARY_MONTHS,
   MAX_AGE_MONTHS,
 } from './engine';
-import type { Assessment, Measure, Sex, Velocity } from './engine';
+import type { Assessment, Measure, RefSet, Sex, Velocity } from './engine';
 import { GrowthChart } from './components/GrowthChart';
 import type { PlottedPoint, TargetBand, ChartMarker } from './components/GrowthChart';
 import { exportChartPng, exportReportPdf, exportCsv } from './export/chartExport';
@@ -66,6 +68,8 @@ export default function App() {
   const [fatherH, setFatherH] = useState('');
   const [motherH, setMotherH] = useState('');
   const [boneAge, setBoneAge] = useState('');
+  const [gestAge, setGestAge] = useState('');
+  const [refSet, setRefSet] = useState<RefSet>('standard');
   const [chartMeasure, setChartMeasure] = useState<Measure>('height');
   const chartRef = useRef<HTMLDivElement>(null);
 
@@ -101,6 +105,13 @@ export default function App() {
     return m > 0 ? m : null;
   }, [ageMode, dob, visit, ageYears, ageMonthsInput]);
 
+  // prematurity: corrected age is what we plot/score against, up to 24 months
+  const gestWeeks = num(gestAge);
+  const isPreterm = gestWeeks != null && gestWeeks < TERM_WEEKS;
+  const corrected =
+    isPreterm && ageMonths != null ? correctedAgeMonths(ageMonths, gestWeeks) : null;
+  const effAge = corrected ?? ageMonths; // age used for z-scores & plotting
+
   const heightCm = num(height);
   const weightKg = num(weight);
   const bmiVal = heightCm && weightKg ? bmiFrom(weightKg, heightCm) : null;
@@ -111,20 +122,20 @@ export default function App() {
     bmi: bmiVal,
   };
 
-  const ageValid = ageMonths != null && ageMonths >= 0 && ageMonths <= MAX_AGE_MONTHS;
+  const ageValid = effAge != null && effAge >= 0 && effAge <= MAX_AGE_MONTHS;
 
   const assessments = useMemo(() => {
     const out: Partial<Record<Measure, Assessment>> = {};
-    if (!ageValid || ageMonths == null) return out;
+    if (!ageValid || effAge == null) return out;
     for (const { key } of MEASURES) {
       const v = values[key];
       if (v == null) continue;
-      const a = assess(key, sex, ageMonths, v);
+      const a = assess(key, sex, effAge, v, refSet);
       if (a) out[key] = a;
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ageValid, ageMonths, sex, heightCm, weightKg, bmiVal]);
+  }, [ageValid, effAge, sex, refSet, heightCm, weightKg, bmiVal]);
 
   // longitudinal points: saved visits for a selected patient, else the live entry
   const chartPoints: PlottedPoint[] = useMemo(() => {
@@ -139,25 +150,25 @@ export default function App() {
         })
         .filter((p): p is PlottedPoint => p !== null);
     }
-    if (!ageValid || ageMonths == null) return [];
+    if (!ageValid || effAge == null) return [];
     const v = values[chartMeasure];
-    return v == null ? [] : [{ age: ageMonths, value: v }];
+    return v == null ? [] : [{ age: effAge, value: v }];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPatient, patients, chartMeasure, ageValid, ageMonths, heightCm, weightKg, bmiVal]);
+  }, [selectedPatient, patients, chartMeasure, ageValid, effAge, heightCm, weightKg, bmiVal]);
 
   // chart window based on the most relevant age (latest visit, or the live entry)
   const refAge =
     selectedPatient && chartPoints.length
       ? Math.max(...chartPoints.map((p) => p.age))
-      : ageMonths;
+      : effAge;
   const infantChart = refAge != null && refAge < BOUNDARY_MONTHS;
   const [minAge, maxAge] = infantChart ? [0, BOUNDARY_MONTHS] : [BOUNDARY_MONTHS, MAX_AGE_MONTHS];
   const xUnit: 'months' | 'years' = infantChart ? 'months' : 'years';
   const measureMeta = MEASURES.find((m) => m.key === chartMeasure)!;
 
   const curves = useMemo(
-    () => referenceCurves(chartMeasure, sex, minAge, maxAge),
-    [chartMeasure, sex, minAge, maxAge],
+    () => referenceCurves(chartMeasure, sex, minAge, maxAge, undefined, refSet),
+    [chartMeasure, sex, minAge, maxAge, refSet],
   );
 
   // mid-parental target height (Tanner, ±10 cm)
@@ -195,10 +206,11 @@ export default function App() {
   const chartMarkers: ChartMarker[] | undefined =
     heightChart && boneMarker ? [boneMarker] : undefined;
 
-  const ageOutOfRange = ageMonths != null && ageMonths > MAX_AGE_MONTHS;
+  const ageOutOfRange = effAge != null && effAge > MAX_AGE_MONTHS;
   const hasResults = Object.keys(assessments).length > 0;
   const hasMeasurement = heightCm != null || weightKg != null;
-  const sourceLabel = ageMonths != null && ageMonths < BOUNDARY_MONTHS ? 'WHO' : 'CDC';
+  const segmentLabel = effAge != null && effAge < BOUNDARY_MONTHS ? 'WHO' : 'CDC';
+  const sourceLabel = refSet === 'down' ? 'Down (Zemel)' : segmentLabel;
   const patientLocked = selectedPatient != null;
 
   const nameSlug = selectedPatient
@@ -271,11 +283,12 @@ export default function App() {
     h: number | null,
     w: number | null,
     forSex: Sex,
+    forRefSet: RefSet = 'standard',
   ): CsvVisit => {
     const bmi = h && w ? bmiFrom(w, h) : null;
-    const aH = h != null ? assess('height', forSex, am, h) : null;
-    const aW = w != null ? assess('weight', forSex, am, w) : null;
-    const aB = bmi != null ? assess('bmi', forSex, am, bmi) : null;
+    const aH = h != null ? assess('height', forSex, am, h, forRefSet) : null;
+    const aW = w != null ? assess('weight', forSex, am, w, forRefSet) : null;
+    const aB = bmi != null ? assess('bmi', forSex, am, bmi, forRefSet) : null;
     return {
       date,
       ageMonths: am,
@@ -290,7 +303,7 @@ export default function App() {
       weightCentile: aW?.centile ?? null,
       bmiZ: aB?.z ?? null,
       bmiCentile: aB?.centile ?? null,
-      source: am < BOUNDARY_MONTHS ? 'WHO' : 'CDC',
+      source: forRefSet === 'down' ? 'Down' : am < BOUNDARY_MONTHS ? 'WHO' : 'CDC',
     };
   };
 
@@ -313,8 +326,8 @@ export default function App() {
             selectedPatient.sex,
           ),
         )
-      : ageMonths != null
-        ? [csvForVisit(ageMode === 'dob' ? visit : today, ageMonths, heightCm, weightKg, sex)]
+      : effAge != null
+        ? [csvForVisit(ageMode === 'dob' ? visit : today, effAge, heightCm, weightKg, sex, refSet)]
         : [];
     if (rows.length) exportCsv(rows, `${fileBase}.csv`);
   };
@@ -351,6 +364,21 @@ export default function App() {
                 onClick={() => setSex('female')}
               >
                 Female
+              </button>
+            </div>
+          </div>
+
+          <div className="field">
+            <span className="field-label">Reference chart</span>
+            <div className="segmented">
+              <button
+                className={refSet === 'standard' ? 'on' : ''}
+                onClick={() => setRefSet('standard')}
+              >
+                Standard
+              </button>
+              <button className={refSet === 'down' ? 'on' : ''} onClick={() => setRefSet('down')}>
+                Down syndrome
               </button>
             </div>
           </div>
@@ -416,6 +444,18 @@ export default function App() {
             </label>
           </div>
 
+          <label>
+            Gestational age at birth (weeks — for preterm correction)
+            <input
+              type="number"
+              step="1"
+              min="22"
+              max="42"
+              value={gestAge}
+              onChange={(e) => setGestAge(e.target.value)}
+            />
+          </label>
+
           <span className="field-label" style={{ marginTop: 4 }}>
             Genetic &amp; skeletal (optional)
           </span>
@@ -457,9 +497,21 @@ export default function App() {
           <div className="age-readout">
             {ageMonths != null && (
               <>
-                Age: <strong>{formatAge(ageMonths)}</strong> ({ageMonths.toFixed(2)} months)
-                <span className="src-chip">{ageMonths < BOUNDARY_MONTHS ? 'WHO' : 'CDC'}</span>
+                {corrected != null ? (
+                  <>
+                    Corrected age: <strong>{formatAge(corrected)}</strong> ({corrected.toFixed(2)} mo)
+                    · chronological {formatAge(ageMonths)}
+                  </>
+                ) : (
+                  <>
+                    Age: <strong>{formatAge(ageMonths)}</strong> ({ageMonths.toFixed(2)} months)
+                  </>
+                )}
+                <span className="src-chip">{sourceLabel}</span>
               </>
+            )}
+            {isPreterm && corrected == null && ageMonths != null && ageMonths > 24 && (
+              <span className="hint"> · preterm correction not applied beyond 24 months</span>
             )}
             {ageOutOfRange && <span className="warn"> · beyond 20 y (out of chart range)</span>}
           </div>
@@ -635,7 +687,12 @@ export default function App() {
           </div>
           <div className="chart-foot">
             <p className="chart-caption">
-              {infantChart ? 'WHO standards, 0–2 years' : 'CDC reference, 2–20 years'} · {sex} ·
+              {refSet === 'down'
+                ? 'Down syndrome (Zemel 2015)'
+                : infantChart
+                  ? 'WHO standards, 0–2 years'
+                  : 'CDC reference, 2–20 years'}{' '}
+              · {sex} ·
               {selectedPatient ? ` ${chartPoints.length} visit(s)` : ' centile curves 3–97'}
             </p>
             <div className="export-bar">

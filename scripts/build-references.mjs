@@ -110,6 +110,44 @@ function parseExtBmi(file) {
   return out;
 }
 
+// Zemel 2015 Down syndrome charts (from the open peditools dataset). Mapped into
+// the same {who: 0-<24mo, cdc: >=24mo} slots as the standard references so the
+// lookup/interpolation code is shared. Height uses infant recumbent length then
+// pedi standing height, mirroring the WHO->CDC convention.
+function parseDown(file) {
+  const text = readFileSync(join(SRC, 'down', file), 'utf8').trim();
+  const lines = text.split(/\r?\n/);
+  const h = lines[0].split(',').map((s) => s.trim().toLowerCase());
+  const col = (n) => h.indexOf(n);
+  const iChart = col('chart'), iAge = col('age'), iUnits = col('age_units');
+  const iGender = col('gender'), iMeasure = col('measure');
+  const iL = col('l'), iM = col('m'), iS = col('s');
+  const empty = () => ({ who: { male: [], female: [] }, cdc: { male: [], female: [] } });
+  const out = { height: empty(), weight: empty(), bmi: empty() };
+  const measureMap = { length: 'height', height: 'height', weight: 'weight', bmi: 'bmi' };
+  for (let r = 1; r < lines.length; r++) {
+    const c = lines[r].split(',');
+    const measure = measureMap[c[iMeasure]];
+    if (!measure) continue; // skip head_circ etc.
+    const sex = c[iGender].trim() === 'm' ? 'male' : 'female';
+    const ageMonths = c[iUnits].trim() === 'years' ? parseFloat(c[iAge]) * 12 : parseFloat(c[iAge]);
+    const point = [round(ageMonths), parseFloat(c[iL]), parseFloat(c[iM]), parseFloat(c[iS])];
+    const infant = c[iChart].includes('infant');
+    if (infant && ageMonths < WHO_MAX_MONTHS) out[measure].who[sex].push(point);
+    else if (!infant && ageMonths >= WHO_MAX_MONTHS) out[measure].cdc[sex].push(point);
+  }
+  for (const m of Object.keys(out)) {
+    for (const seg of ['who', 'cdc']) {
+      for (const sx of ['male', 'female']) out[m][seg][sx].sort((a, b) => a[0] - b[0]);
+    }
+  }
+  console.log(
+    `  DOWN ${file.padEnd(16)} height m=${out.height.who.male.length}+${out.height.cdc.male.length}` +
+      ` weight m=${out.weight.who.male.length}+${out.weight.cdc.male.length} bmi m=${out.bmi.cdc.male.length}`,
+  );
+  return out;
+}
+
 function round(n) {
   return Math.round(n * 1e6) / 1e6;
 }
@@ -122,6 +160,7 @@ const refs = {
 };
 
 const extendedBmi = parseExtBmi('bmi-age-2022.csv');
+const down = parseDown('zemel_2015.csv');
 
 const payload = {
   meta: {
@@ -132,11 +171,13 @@ const payload = {
       who: 'WHO Child Growth Standards (length/weight/BMI-for-age), LMS, 0 to <24 months',
       cdc: 'CDC 2000 Growth Charts (stature/weight/BMI-for-age), LMS, 24 to 240 months',
       extendedBmi: 'CDC Extended BMI-for-age (2022): sigma + P95 for BMI >= 95th pct, 24-240 months',
+      down: 'Zemel 2015 Down syndrome charts (via peditools): height/weight 0-20y, BMI 2-20y',
     },
-    note: 'height = WHO recumbent length (0-2y) then CDC standing stature (2-20y)',
+    note: 'height = recumbent length (0-2y) then standing stature (2-20y)',
   },
   data: refs,
   extendedBmi,
+  down,
 };
 
 mkdirSync(OUT_DIR, { recursive: true });

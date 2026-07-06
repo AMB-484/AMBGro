@@ -2,7 +2,7 @@
 // given age and linearly interpolates the LMS parameters between grid points.
 
 import references from './data/references.generated';
-import type { Lms, LmsPoint, Measure, Sex, Source } from './types';
+import type { Lms, LmsPoint, Measure, MeasureRefs, RefSet, Sex, Source } from './types';
 
 export const BOUNDARY_MONTHS = references.meta.boundaryMonths;
 export const MIN_AGE_MONTHS = 0;
@@ -12,8 +12,12 @@ export function sourceForAge(ageMonths: number): Source {
   return ageMonths < BOUNDARY_MONTHS ? 'WHO' : 'CDC';
 }
 
-function seriesFor(measure: Measure, sex: Sex, source: Source): LmsPoint[] {
-  const refs = references.data[measure];
+function measureRefs(measure: Measure, refSet: RefSet): MeasureRefs {
+  return refSet === 'down' ? references.down[measure] : references.data[measure];
+}
+
+function seriesFor(measure: Measure, sex: Sex, source: Source, refSet: RefSet): LmsPoint[] {
+  const refs = measureRefs(measure, refSet);
   return (source === 'WHO' ? refs.who : refs.cdc)[sex];
 }
 
@@ -42,9 +46,14 @@ function interpolate(series: LmsPoint[], age: number): Lms | null {
   };
 }
 
-export function lookupLMS(measure: Measure, sex: Sex, ageMonths: number): Lms | null {
+export function lookupLMS(
+  measure: Measure,
+  sex: Sex,
+  ageMonths: number,
+  refSet: RefSet = 'standard',
+): Lms | null {
   if (ageMonths < MIN_AGE_MONTHS || ageMonths > MAX_AGE_MONTHS) return null;
-  const series = seriesFor(measure, sex, sourceForAge(ageMonths));
+  const series = seriesFor(measure, sex, sourceForAge(ageMonths), refSet);
   return interpolate(series, ageMonths);
 }
 
@@ -77,8 +86,14 @@ export function extendedBmiParams(sex: Sex, ageMonths: number): ExtBmi | null {
 }
 
 /** Grid ages (months) available for a measure/sex within [minAge, maxAge]. */
-export function gridAges(measure: Measure, sex: Sex, minAge: number, maxAge: number): number[] {
-  const refs = references.data[measure];
+export function gridAges(
+  measure: Measure,
+  sex: Sex,
+  minAge: number,
+  maxAge: number,
+  refSet: RefSet = 'standard',
+): number[] {
+  const refs = measureRefs(measure, refSet);
   const ages: number[] = [];
   for (const series of [refs.who[sex], refs.cdc[sex]]) {
     for (const p of series) {

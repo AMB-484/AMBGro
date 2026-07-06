@@ -42,6 +42,29 @@ data). Canonical source: WHO Child Growth Standards —
 https://www.who.int/tools/child-growth-standards/standards
 WHO permits use of these standards for such applications.
 
+## Down syndrome — `down/zemel_2015.csv`
+
+Zemel et al. 2015 Down syndrome growth charts (US), LMS. Extracted (zemel_2015_*
+rows only) from the open **peditools** dataset
+(https://github.com/jhchou/peditools, `data-raw/charts_long.csv`), which reproduces
+the published Zemel 2015 LMS values. Columns: `chart, age, age_units, gender,
+measure, measure_units, L, M, S`. Covers height/weight 0–20y and BMI 2–20y, both
+sexes. Selected in-app via the "Down syndrome" reference toggle. Zemel B, et al.
+Pediatrics 2015;136(5):e1204-11 (PMC5451269).
+
+## Prematurity / corrected age
+
+Corrected (adjusted) age is computed in-app as chronological age −
+(40 − gestational weeks), applied up to 24 months, then plotted on the WHO
+standards. (Neonatal Fenton/INTERGROWTH-21st preterm *chart* plotting is a future
+addition; `fenton_2003`/`olsen` LMS are present in the peditools dataset if needed.)
+
+## Turner syndrome (not yet included)
+
+Turner references are population-specific (multiple national datasets, no single
+authoritative machine-readable LMS). Deferred pending a clinician-chosen reference;
+the reference-set framework already supports adding it as another toggle.
+
 ## Note on the 2-year handoff
 
 Under 2 years WHO measures **recumbent length**; from 2 years CDC measures

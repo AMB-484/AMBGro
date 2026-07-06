@@ -1,6 +1,26 @@
-// Endocrine helpers: mid-parental (target) height and height velocity.
+// Endocrine helpers: mid-parental (target) height, height velocity, and
+// corrected age for prematurity.
 
+import { DAYS_PER_MONTH } from './age';
 import type { Sex } from './types';
+
+export const TERM_WEEKS = 37; // >= 37 weeks gestation is term
+const FULL_TERM_WEEKS = 40; // reference for correction
+
+/**
+ * Corrected (adjusted) age for prematurity. For infants born < 37 weeks, subtract
+ * the prematurity (40 - gestationWeeks) from the chronological age, up to a cutoff
+ * (default 24 months chronological), after which chronological age is used.
+ */
+export function correctedAgeMonths(
+  chronoMonths: number,
+  gestationWeeks: number,
+  cutoffMonths = 24,
+): number {
+  if (gestationWeeks >= TERM_WEEKS || chronoMonths > cutoffMonths) return chronoMonths;
+  const correctionMonths = ((FULL_TERM_WEEKS - gestationWeeks) * 7) / DAYS_PER_MONTH;
+  return Math.max(0, chronoMonths - correctionMonths);
+}
 
 export interface TargetHeight {
   mph: number; // mid-parental height, cm
