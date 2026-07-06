@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="GrowthTrack">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- axes -->
+  <path d="M140 372 H392 M140 372 V140" stroke="#ffffff" stroke-opacity="0.45" stroke-width="10" stroke-linecap="round" fill="none"/>
+  <!-- growth curve -->
+  <path d="M140 340 C210 330 250 250 300 210 C330 186 360 178 384 168" stroke="#ffffff" stroke-width="20" stroke-linecap="round" fill="none"/>
+  <!-- plotted point -->
+  <circle cx="300" cy="210" r="20" fill="#ffffff"/>
+  <circle cx="300" cy="210" r="9" fill="#1d4ed8"/>
+</svg>

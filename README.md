@@ -7,30 +7,37 @@ height, weight and BMI, plotted on WHO/CDC growth charts — fully offline.
 Built by Dr. Awais Butt. Clinical decision support for qualified clinicians; not
 a substitute for clinical judgement.
 
-## Status — Phase 1 (MVP)
-
-Working today:
+## What works
 
 - Exact Z-scores & centiles from the underlying **LMS parameters** (not visual
-  approximation).
-- **WHO** standards for 0–<24 months and **CDC** reference for 24–240 months,
-  with automatic dataset selection at the 2-year boundary.
-- Age from **date of birth** (exact, to the day) or entered directly.
-- Height / weight / **BMI-for-age**.
-- On-screen **growth chart** (SVG) with 3rd–97th centile curves and the plotted
-  patient point; month axis for infants, year axis for children.
+  approximation), for height, weight and **BMI-for-age**.
+- **WHO** standards 0–<24 months and **CDC** 24–240 months, auto-selected at the
+  2-year boundary. Age from **date of birth** (exact, to the day) or entered directly.
+- **CDC Extended BMI-for-age (2022)** for severe obesity — z-scores above the 95th
+  percentile don't saturate.
+- **Export**: high-res PNG, a PDF clinical report, and CSV of measurements + z/centiles.
+- **Saved patient records** (offline, localStorage): visits plot as a longitudinal
+  trajectory; per-patient CSV.
+- **Endocrine tools**: mid-parental (target) height (Tanner, ±10 cm) as a chart band;
+  height velocity between visits; bone age plotted on the height chart.
+- **Down syndrome** reference charts (Zemel 2015), toggled against the standard.
+- **Prematurity**: corrected age from gestational age, applied to ≤24 months.
+- **Installable PWA** — works fully offline; can be added to an Android home screen.
 - 100% offline: all reference data is bundled into the app.
 
-Not yet built (see Roadmap): height velocity, mid-parental target height,
-bone-age / Bayley–Pinneau prediction, CDC Extended-BMI for severe obesity,
-Turner & Down syndrome charts, prematurity/corrected-age, PDF/PNG/CSV export,
-saved longitudinal patient records, and packaging as an installable
-Android app (PWA → Capacitor APK).
+### Deferred / not yet built
+
+- **Turner syndrome** charts — population-specific; awaiting a clinician-chosen,
+  verified reference (the reference-set framework already supports adding it).
+- **Bayley–Pinneau** numeric adult-height prediction — its 1952 tables are not
+  available in verified machine-readable form; bone-age *visualisation* is done.
+- **Fenton / INTERGROWTH-21st** preterm *chart* plotting (corrected-age on WHO is done).
 
 ## Tech
 
-- React 19 + TypeScript + Vite (web-first; becomes a PWA, then an Android APK via
-  Capacitor, and a desktop app later — one codebase).
+- React 19 + TypeScript + Vite (web-first). Ships as an offline **PWA**
+  (vite-plugin-pwa) and an Android **APK via Capacitor** (built in CI). Same
+  codebase can become a desktop app later.
 - No paid tools or data. All reference datasets are public.
 
 ## Project layout
@@ -57,9 +64,32 @@ src/App.tsx               UI
 ```
 npm install        # once
 npm run dev        # local dev server (http://localhost:5173)
-npm run build      # typecheck + production build
+npm run build      # typecheck + production build (also generates the PWA)
+npm run preview    # serve the production build locally
 npm run data       # regenerate the bundled dataset from data-src/ (with self-validation)
 npm run validate   # run independent engine checks
+```
+
+## Getting it on your phone
+
+**Option A — install the PWA now (no build tooling):**
+1. Host the `dist/` folder anywhere over HTTPS (e.g. GitHub Pages, Netlify — both
+   free), or run `npm run preview` and open it on a phone on the same network.
+2. Open the URL in Android Chrome → menu → **Add to Home screen / Install app**.
+   It then launches full-screen and works offline.
+
+**Option B — build a Play Store APK (Capacitor, in the cloud):**
+No local Android SDK is needed. Push this repo to GitHub, then run the
+**Build Android APK** workflow (Actions tab → Run workflow, or push a `v*` tag).
+It builds `dist`, wraps it with Capacitor, and uploads an installable
+`app-debug.apk` artifact. See [.github/workflows/android.yml](.github/workflows/android.yml).
+
+To build locally instead (requires JDK 21 + Android SDK):
+```
+npm run build
+npx cap add android      # first time only
+npx cap sync android
+cd android && ./gradlew assembleDebug
 ```
 
 ## Data & validation
