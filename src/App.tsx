@@ -6,12 +6,14 @@ import {
   ageMonthsFromDates,
   yearsToMonths,
   formatAge,
+  midParentalHeight,
+  heightVelocity,
   BOUNDARY_MONTHS,
   MAX_AGE_MONTHS,
 } from './engine';
-import type { Assessment, Measure, Sex } from './engine';
+import type { Assessment, Measure, Sex, Velocity } from './engine';
 import { GrowthChart } from './components/GrowthChart';
-import type { PlottedPoint } from './components/GrowthChart';
+import type { PlottedPoint, TargetBand, ChartMarker } from './components/GrowthChart';
 import { exportChartPng, exportReportPdf, exportCsv } from './export/chartExport';
 import type { CsvVisit, ReportMeta } from './export/chartExport';
 import {
@@ -61,6 +63,9 @@ export default function App() {
   const [ageMonthsInput, setAgeMonthsInput] = useState('');
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
+  const [fatherH, setFatherH] = useState('');
+  const [motherH, setMotherH] = useState('');
+  const [boneAge, setBoneAge] = useState('');
   const [chartMeasure, setChartMeasure] = useState<Measure>('height');
   const chartRef = useRef<HTMLDivElement>(null);
 
@@ -154,6 +159,41 @@ export default function App() {
     () => referenceCurves(chartMeasure, sex, minAge, maxAge),
     [chartMeasure, sex, minAge, maxAge],
   );
+
+  // mid-parental target height (Tanner, ±10 cm)
+  const fatherCm = num(fatherH);
+  const motherCm = num(motherH);
+  const target = fatherCm && motherCm ? midParentalHeight(sex, fatherCm, motherCm) : null;
+
+  // bone age: plot current height at the bone-age position on the height chart
+  const boneAgeYears = num(boneAge);
+  const boneMarker =
+    boneAgeYears && heightCm ? { age: boneAgeYears * 12, value: heightCm, label: 'BA' } : null;
+
+  // height velocity between consecutive visits of the selected patient
+  const velocities = useMemo<Velocity[]>(() => {
+    if (!selectedPatient) return [];
+    const vs = sortedVisits(selectedPatient).filter((v) => v.heightCm != null);
+    const out: Velocity[] = [];
+    for (let i = 1; i < vs.length; i++) {
+      const a1 = ageMonthsFromDates(new Date(selectedPatient.dob), new Date(vs[i - 1].date));
+      const a2 = ageMonthsFromDates(new Date(selectedPatient.dob), new Date(vs[i].date));
+      const vel = heightVelocity(vs[i - 1].heightCm!, a1, vs[i].heightCm!, a2);
+      if (vel) out.push(vel);
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPatient, patients]);
+  const latestVelocity = velocities.at(-1) ?? null;
+
+  // overlays only make sense on the height chart for children
+  const heightChart = chartMeasure === 'height' && !infantChart;
+  const chartBand: TargetBand | undefined =
+    heightChart && target
+      ? { low: target.low, high: target.high, label: `Target ${target.mph.toFixed(0)} cm` }
+      : undefined;
+  const chartMarkers: ChartMarker[] | undefined =
+    heightChart && boneMarker ? [boneMarker] : undefined;
 
   const ageOutOfRange = ageMonths != null && ageMonths > MAX_AGE_MONTHS;
   const hasResults = Object.keys(assessments).length > 0;
@@ -376,6 +416,44 @@ export default function App() {
             </label>
           </div>
 
+          <span className="field-label" style={{ marginTop: 4 }}>
+            Genetic &amp; skeletal (optional)
+          </span>
+          <div className="grid3">
+            <label>
+              Father (cm)
+              <input type="number" step="0.1" value={fatherH} onChange={(e) => setFatherH(e.target.value)} />
+            </label>
+            <label>
+              Mother (cm)
+              <input type="number" step="0.1" value={motherH} onChange={(e) => setMotherH(e.target.value)} />
+            </label>
+            <label>
+              Bone age (y)
+              <input type="number" step="0.1" value={boneAge} onChange={(e) => setBoneAge(e.target.value)} />
+            </label>
+          </div>
+
+          {(target || (boneAgeYears && ageMonths != null)) && (
+            <div className="tool-readout">
+              {target && (
+                <div>
+                  Target height (MPH):{' '}
+                  <strong>{target.mph.toFixed(1)} cm</strong> ({target.low.toFixed(0)}–
+                  {target.high.toFixed(0)})
+                </div>
+              )}
+              {boneAgeYears != null && ageMonths != null && (
+                <div>
+                  Bone age <strong>{boneAgeYears.toFixed(1)} y</strong> vs chronological{' '}
+                  {formatAge(ageMonths)} ({(boneAgeYears - ageMonths / 12 >= 0 ? '+' : '') +
+                    (boneAgeYears - ageMonths / 12).toFixed(1)}{' '}
+                  y)
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="age-readout">
             {ageMonths != null && (
               <>
@@ -511,6 +589,19 @@ export default function App() {
               height / weight z-scores with caution.
             </p>
           )}
+          {latestVelocity && (
+            <div className="velocity">
+              <span className="field-label">Height velocity (latest interval)</span>
+              <div>
+                <strong>{latestVelocity.cmPerYear.toFixed(1)} cm/yr</strong> ·{' '}
+                {formatAge(latestVelocity.fromAgeMonths)} → {formatAge(latestVelocity.toAgeMonths)} (
+                {latestVelocity.intervalMonths.toFixed(1)} mo)
+                {latestVelocity.intervalMonths < 6 && (
+                  <span className="warn"> · interval &lt; 6 mo; interpret with caution</span>
+                )}
+              </div>
+            </div>
+          )}
           {!ageValid && <p className="note">Enter sex, age and a measurement to see results.</p>}
         </section>
 
@@ -538,6 +629,8 @@ export default function App() {
               maxAge={maxAge}
               curves={curves}
               points={chartPoints}
+              band={chartBand}
+              markers={chartMarkers}
             />
           </div>
           <div className="chart-foot">

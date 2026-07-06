@@ -9,6 +9,18 @@ export interface PlottedPoint {
   label?: string;
 }
 
+export interface TargetBand {
+  low: number;
+  high: number;
+  label: string;
+}
+
+export interface ChartMarker {
+  age: number; // months
+  value: number;
+  label: string;
+}
+
 interface Props {
   title: string;
   unit: string;
@@ -17,6 +29,8 @@ interface Props {
   maxAge: number; // months
   curves: ReferenceCurve[];
   points: PlottedPoint[];
+  band?: TargetBand; // e.g. mid-parental target height range
+  markers?: ChartMarker[]; // e.g. height plotted at bone age
 }
 
 const W = 840;
@@ -43,6 +57,11 @@ text { font-family: system-ui, 'Segoe UI', Roboto, sans-serif; }
 .patient-line { fill: none; stroke: #2563eb; stroke-width: 2; }
 .patient-point { fill: #2563eb; stroke: #ffffff; stroke-width: 1.5; }
 .chart-title { fill: #0f1222; font-size: 14px; font-weight: 600; }
+.target-band { fill: rgba(22, 163, 74, 0.10); }
+.target-line { stroke: #16a34a; stroke-width: 1; stroke-dasharray: 4 3; }
+.target-label { fill: #15803d; font-size: 10px; font-weight: 600; }
+.bone-marker { fill: #ffffff; stroke: #a855f7; stroke-width: 2; }
+.bone-label { fill: #7e22ce; font-size: 10px; font-weight: 600; }
 `;
 
 function niceTicks(min: number, max: number, target = 7): number[] {
@@ -57,7 +76,17 @@ function niceTicks(min: number, max: number, target = 7): number[] {
   return ticks;
 }
 
-export function GrowthChart({ title, unit, xUnit, minAge, maxAge, curves, points }: Props) {
+export function GrowthChart({
+  title,
+  unit,
+  xUnit,
+  minAge,
+  maxAge,
+  curves,
+  points,
+  band,
+  markers,
+}: Props) {
   // value range across all curves + patient points, with padding
   let yMin = Infinity;
   let yMax = -Infinity;
@@ -71,6 +100,14 @@ export function GrowthChart({ title, unit, xUnit, minAge, maxAge, curves, points
   for (const p of points) {
     if (p.value < yMin) yMin = p.value;
     if (p.value > yMax) yMax = p.value;
+  }
+  for (const mk of markers ?? []) {
+    if (mk.value < yMin) yMin = mk.value;
+    if (mk.value > yMax) yMax = mk.value;
+  }
+  if (band) {
+    if (band.low < yMin) yMin = band.low;
+    if (band.high > yMax) yMax = band.high;
   }
   if (!Number.isFinite(yMin)) {
     yMin = 0;
@@ -109,6 +146,24 @@ export function GrowthChart({ title, unit, xUnit, minAge, maxAge, curves, points
         <style>{CHART_CSS}</style>
         {/* plot frame */}
         <rect x={M.left} y={M.top} width={plotW} height={plotH} className="plot-bg" />
+
+        {/* mid-parental target band (drawn behind curves) */}
+        {band && (
+          <g>
+            <rect
+              x={M.left}
+              y={yScale(band.high)}
+              width={plotW}
+              height={yScale(band.low) - yScale(band.high)}
+              className="target-band"
+            />
+            <line x1={M.left} x2={M.left + plotW} y1={yScale(band.low)} y2={yScale(band.low)} className="target-line" />
+            <line x1={M.left} x2={M.left + plotW} y1={yScale(band.high)} y2={yScale(band.high)} className="target-line" />
+            <text x={M.left + plotW - 4} y={yScale(band.high) - 4} textAnchor="end" className="target-label">
+              {band.label}
+            </text>
+          </g>
+        )}
 
         {/* y gridlines + labels */}
         {yTicks.map((v) => (
@@ -159,6 +214,23 @@ export function GrowthChart({ title, unit, xUnit, minAge, maxAge, curves, points
         {/* patient points */}
         {points.map((p, i) => (
           <circle key={i} cx={xScale(p.age)} cy={yScale(p.value)} r={5} className="patient-point" />
+        ))}
+
+        {/* extra markers, e.g. height plotted at bone age (open diamond) */}
+        {(markers ?? []).map((mk, i) => (
+          <g key={`mk${i}`}>
+            <rect
+              x={xScale(mk.age) - 5}
+              y={yScale(mk.value) - 5}
+              width={10}
+              height={10}
+              transform={`rotate(45 ${xScale(mk.age)} ${yScale(mk.value)})`}
+              className="bone-marker"
+            />
+            <text x={xScale(mk.age)} y={yScale(mk.value) - 11} textAnchor="middle" className="bone-label">
+              {mk.label}
+            </text>
+          </g>
         ))}
 
         {/* axis titles */}
