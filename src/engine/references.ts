@@ -48,6 +48,34 @@ export function lookupLMS(measure: Measure, sex: Sex, ageMonths: number): Lms | 
   return interpolate(series, ageMonths);
 }
 
+export interface ExtBmi {
+  sigma: number;
+  p95: number;
+}
+
+/** CDC Extended-BMI sigma + P95 at `age` (CDC range only). */
+export function extendedBmiParams(sex: Sex, ageMonths: number): ExtBmi | null {
+  if (ageMonths < BOUNDARY_MONTHS || ageMonths > MAX_AGE_MONTHS) return null;
+  const series = references.extendedBmi[sex];
+  if (series.length === 0) return null;
+  let point = series[series.length - 1];
+  if (ageMonths <= series[0][0]) point = series[0];
+  else if (ageMonths < point[0]) {
+    let lo = 0;
+    let hi = series.length - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (series[mid][0] <= ageMonths) lo = mid;
+      else hi = mid;
+    }
+    const a = series[lo];
+    const b = series[hi];
+    const f = (ageMonths - a[0]) / (b[0] - a[0]);
+    return { sigma: a[1] + f * (b[1] - a[1]), p95: a[2] + f * (b[2] - a[2]) };
+  }
+  return { sigma: point[1], p95: point[2] };
+}
+
 /** Grid ages (months) available for a measure/sex within [minAge, maxAge]. */
 export function gridAges(measure: Measure, sex: Sex, minAge: number, maxAge: number): number[] {
   const refs = references.data[measure];

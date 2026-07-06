@@ -15,6 +15,15 @@ const measurementFromZ = (z, L, M, S) =>
   Math.abs(L) < 1e-7 ? M * Math.exp(S * z) : M * Math.pow(1 + L * S * z, 1 / L);
 const zFromMeasurement = (x, L, M, S) =>
   Math.abs(L) < 1e-7 ? Math.log(x / M) / S : (Math.pow(x / M, L) - 1) / (L * S);
+const erfc = (x) => {
+  const t = 1 / (1 + 0.5 * Math.abs(x));
+  const p = [0.17087277, -0.82215223, 1.48851587, -1.13520398, 0.27886807, -0.18628806, 0.09678418, 0.37409196, 1.00002368];
+  let poly = 0;
+  for (const c of p) poly = poly * t + c;
+  const tau = t * Math.exp(-x * x - 1.26551223 + t * poly);
+  return x >= 0 ? tau : 2 - tau;
+};
+const normalCdf = (z) => 0.5 * erfc(-z / Math.SQRT2);
 
 function lookup(measure, sex, age) {
   const series = age < refs.meta.boundaryMonths ? refs.data[measure].who[sex] : refs.data[measure].cdc[sex];
@@ -70,6 +79,21 @@ function check(name, got, want, tol) {
   const cdcFirst = lookup('height', 'male', 24);
   const diff = Math.abs(whoLast[2] - cdcFirst[2]);
   check('WHO->CDC median height step @24mo (length vs height) < 1.6cm', diff, 0, 1.6);
+}
+
+// 6) Extended BMI: P95 in the sigma table matches the LMS-derived 95th percentile,
+//    and BMI 2*sigma above P95 maps to ~99.77th percentile.
+{
+  const target = 120;
+  const ext = refs.extendedBmi.male.reduce((best, p) =>
+    Math.abs(p[0] - target) < Math.abs(best[0] - target) ? p : best,
+  ); // [age, sigma, p95]
+  const [, L, M, S] = lookup('bmi', 'male', ext[0]);
+  const lmsP95 = measurementFromZ(1.6448536, L, M, S);
+  check(`extBMI male @${ext[0]}mo: P95 == LMS 95th pct`, ext[2], lmsP95, 0.1);
+  const bmi = ext[2] + 2 * ext[1];
+  const pct = 90 + 10 * normalCdf((bmi - ext[2]) / ext[1]);
+  check('extBMI pct at P95 + 2*sigma ~ 99.77', pct, 99.77, 0.5);
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);

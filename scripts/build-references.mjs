@@ -87,6 +87,29 @@ function parseWho(file, measure) {
   return out;
 }
 
+// CDC Extended BMI-for-age (2022): sigma + P95 per sex/age, used for BMI at or
+// above the 95th percentile (severe obesity) so z-scores don't saturate.
+function parseExtBmi(file) {
+  const text = readFileSync(join(SRC, 'cdc', file), 'utf8').trim();
+  const lines = text.split(/\r?\n/);
+  const header = lines[0].split(',').map((h) => h.trim().toLowerCase());
+  const iSex = header.indexOf('sex');
+  const iAge = header.indexOf('agemos');
+  const iSigma = header.indexOf('sigma');
+  const iP95 = header.indexOf('p95');
+  if (iSigma < 0 || iP95 < 0) throw new Error(`${file}: missing sigma/P95 columns`);
+  const out = { male: [], female: [] };
+  for (let r = 1; r < lines.length; r++) {
+    const c = lines[r].split(',');
+    const age = parseFloat(c[iAge]);
+    if (!(age >= 24)) continue;
+    const sex = c[iSex].trim() === '1' ? 'male' : 'female';
+    out[sex].push([round(age), parseFloat(c[iSigma]), parseFloat(c[iP95])]);
+  }
+  console.log(`  CDC extBMI ${file.padEnd(16)} rows m=${out.male.length} f=${out.female.length}`);
+  return out;
+}
+
 function round(n) {
   return Math.round(n * 1e6) / 1e6;
 }
@@ -98,6 +121,8 @@ const refs = {
   bmi: { who: parseWho('bmianthro.txt', 'bmi'), cdc: parseCdc('bmiagerev.csv', 'bmi') },
 };
 
+const extendedBmi = parseExtBmi('bmi-age-2022.csv');
+
 const payload = {
   meta: {
     generated: new Date().toISOString().slice(0, 10),
@@ -106,10 +131,12 @@ const payload = {
     sources: {
       who: 'WHO Child Growth Standards (length/weight/BMI-for-age), LMS, 0 to <24 months',
       cdc: 'CDC 2000 Growth Charts (stature/weight/BMI-for-age), LMS, 24 to 240 months',
+      extendedBmi: 'CDC Extended BMI-for-age (2022): sigma + P95 for BMI >= 95th pct, 24-240 months',
     },
     note: 'height = WHO recumbent length (0-2y) then CDC standing stature (2-20y)',
   },
   data: refs,
+  extendedBmi,
 };
 
 mkdirSync(OUT_DIR, { recursive: true });

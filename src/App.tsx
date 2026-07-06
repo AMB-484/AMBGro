@@ -276,10 +276,16 @@ export default function App() {
               })}
             </tbody>
           </table>
+          {assessments.bmi?.method === 'extended-BMI' && (
+            <p className="note">
+              BMI ≥ 95th percentile: z-score &amp; centile use the <strong>CDC Extended BMI-for-age
+              (2022)</strong> method so severe obesity is not compressed near the 99th centile.
+            </p>
+          )}
           {Object.values(assessments).some((a) => a?.extreme) && (
             <p className="note">
-              ⚠ Values beyond ±3 SD are LMS extrapolations. Extended-BMI / modified-Z handling for
-              severe obesity and extreme short stature is planned (Phase 2).
+              ⚠ A value beyond ±3 SD on the LMS scale is an extrapolation — interpret extreme
+              height / weight z-scores with caution.
             </p>
           )}
           {!ageValid && <p className="note">Enter sex, age and a measurement to see results.</p>}

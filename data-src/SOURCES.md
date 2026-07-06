@@ -14,6 +14,12 @@ percentiles). Sex column: 1 = male, 2 = female. Age in months (`Agemos`).
 - `bmiagerev.csv` — BMI-for-age, 24–240 months (USED)
 - `lenageinf.csv`, `wtageinf.csv`, `wtleninf.csv`, `hcageinf.csv` — CDC infant
   charts (downloaded for reference/fallback; not used because we use WHO 0–2y)
+- `bmi-age-2022.csv` — **CDC Extended BMI-for-age (2022)**: adds `sigma` and `P95`
+  columns (USED for BMI ≥ 95th percentile / severe obesity). Above P95 the
+  percentile is `90 + 10·Φ((BMI − P95)/sigma)` (half-normal tail; Wei et al. 2020),
+  which avoids the compression of standard LMS near the 99th percentile.
+  Source: https://www.cdc.gov/growthcharts/extended-bmi-data-files.htm
+  (file: https://www.cdc.gov/growthcharts/data/extended-bmi/bmi-age-2022.csv)
 
 Source: CDC National Center for Health Statistics —
 https://www.cdc.gov/growthcharts/percentile_data_files.htm

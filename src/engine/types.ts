@@ -17,6 +17,9 @@ export interface MeasureRefs {
   cdc: SexSeries;
 }
 
+/** Extended-BMI parameters: [ageMonths, sigma, P95]. */
+export type ExtBmiPoint = [age: number, sigma: number, p95: number];
+
 export interface ReferencesFile {
   meta: {
     generated: string;
@@ -26,6 +29,7 @@ export interface ReferencesFile {
     note: string;
   };
   data: Record<Measure, MeasureRefs>;
+  extendedBmi: { male: ExtBmiPoint[]; female: ExtBmiPoint[] };
 }
 
 export interface Lms {

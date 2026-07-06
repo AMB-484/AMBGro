@@ -24,7 +24,7 @@ export {
   referenceCurves,
   DEFAULT_CENTILES,
 } from './anthro';
-export type { Assessment, CurvePoint, ReferenceCurve } from './anthro';
+export type { Assessment, CurvePoint, ReferenceCurve, Method } from './anthro';
 export {
   ageMonthsFromDates,
   daysBetween,
