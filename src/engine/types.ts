@@ -1,0 +1,35 @@
+// Shared domain types for the growth-reference engine.
+
+export type Sex = 'male' | 'female';
+export type Measure = 'height' | 'weight' | 'bmi';
+export type Source = 'WHO' | 'CDC';
+
+/** One reference point: [ageMonths, L, M, S]. */
+export type LmsPoint = [age: number, L: number, M: number, S: number];
+
+export interface SexSeries {
+  male: LmsPoint[];
+  female: LmsPoint[];
+}
+
+export interface MeasureRefs {
+  who: SexSeries;
+  cdc: SexSeries;
+}
+
+export interface ReferencesFile {
+  meta: {
+    generated: string;
+    ageUnit: string;
+    boundaryMonths: number;
+    sources: Record<string, string>;
+    note: string;
+  };
+  data: Record<Measure, MeasureRefs>;
+}
+
+export interface Lms {
+  L: number;
+  M: number;
+  S: number;
+}
