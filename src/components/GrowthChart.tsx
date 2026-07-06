@@ -25,6 +25,26 @@ const M = { top: 28, right: 54, bottom: 46, left: 58 };
 const plotW = W - M.left - M.right;
 const plotH = H - M.top - M.bottom;
 
+// Styles are embedded in the SVG (with literal colours, not CSS variables) so the
+// chart is fully self-contained and rasterises correctly when exported to PNG/PDF.
+const CHART_CSS = `
+svg { background: #ffffff; }
+text { font-family: system-ui, 'Segoe UI', Roboto, sans-serif; }
+.plot-bg { fill: #ffffff; stroke: #e2e4ee; }
+.grid { stroke: #eef0f6; stroke-width: 1; }
+.axis-label { fill: #6b6375; font-size: 11px; }
+.y-label { text-anchor: end; dominant-baseline: middle; }
+.x-label { text-anchor: middle; }
+.axis-title { fill: #6b6375; font-size: 12px; text-anchor: middle; font-weight: 500; }
+.curve { fill: none; stroke: #9aa4b8; stroke-width: 1.3; }
+.curve-median { stroke: #1f2937; stroke-width: 1.8; }
+.curve-outer { stroke: #dc2626; stroke-width: 1.3; }
+.centile-label { fill: #6b6375; font-size: 10px; dominant-baseline: middle; }
+.patient-line { fill: none; stroke: #2563eb; stroke-width: 2; }
+.patient-point { fill: #2563eb; stroke: #ffffff; stroke-width: 1.5; }
+.chart-title { fill: #0f1222; font-size: 14px; font-weight: 600; }
+`;
+
 function niceTicks(min: number, max: number, target = 7): number[] {
   const span = max - min || 1;
   const raw = span / target;
@@ -79,7 +99,14 @@ export function GrowthChart({ title, unit, xUnit, minAge, maxAge, curves, points
 
   return (
     <figure className="chart">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={title} className="chart-svg">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        role="img"
+        aria-label={title}
+        className="chart-svg"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <style>{CHART_CSS}</style>
         {/* plot frame */}
         <rect x={M.left} y={M.top} width={plotW} height={plotH} className="plot-bg" />
 

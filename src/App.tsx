@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   assess,
   bmiFrom,
@@ -12,6 +12,8 @@ import {
 import type { Assessment, Measure, Sex } from './engine';
 import { GrowthChart } from './components/GrowthChart';
 import type { PlottedPoint } from './components/GrowthChart';
+import { exportChartPng, exportReportPdf, exportCsv } from './export/chartExport';
+import type { CsvVisit, ReportMeta } from './export/chartExport';
 import './App.css';
 
 const APP_NAME = 'GrowthTrack';
@@ -47,6 +49,7 @@ export default function App() {
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
   const [chartMeasure, setChartMeasure] = useState<Measure>('height');
+  const chartRef = useRef<HTMLDivElement>(null);
 
   const ageMonths = useMemo<number | null>(() => {
     if (ageMode === 'dob') {
@@ -105,6 +108,61 @@ export default function App() {
   }, [ageValid, ageMonths, chartMeasure, heightCm, weightKg, bmiVal]);
 
   const ageOutOfRange = ageMonths != null && ageMonths > MAX_AGE_MONTHS;
+
+  const hasResults = Object.keys(assessments).length > 0;
+  const sourceLabel = ageMonths != null && ageMonths < BOUNDARY_MONTHS ? 'WHO' : 'CDC';
+  const fileDate = ageMode === 'dob' ? visit : today;
+  const fileBase = `growth_${sex}_${fileDate}`;
+
+  const getSvg = () => chartRef.current?.querySelector('svg') as SVGSVGElement | null;
+
+  const buildReportMeta = (): ReportMeta => ({
+    appName: APP_NAME,
+    developer: DEVELOPER,
+    sex: sex[0].toUpperCase() + sex.slice(1),
+    ageLabel: ageMonths != null ? `${formatAge(ageMonths)} (${ageMonths.toFixed(2)} mo)` : '—',
+    dateLabel:
+      ageMode === 'dob' ? `DOB ${dob} · visit ${visit}` : 'Age entered directly',
+    chartTitle: `${measureMeta.label}-for-age · ${sourceLabel}`,
+    measurements: MEASURES.filter((m) => assessments[m.key]).map((m) => {
+      const a = assessments[m.key]!;
+      const v = values[m.key]!;
+      return {
+        label: m.label,
+        value: `${v.toFixed(1)} ${m.unit}`,
+        z: `${a.z >= 0 ? '+' : ''}${a.z.toFixed(2)}`,
+        centile: fmtCentile(a.centile),
+        source: a.source,
+      };
+    }),
+  });
+
+  const buildCsvVisit = (): CsvVisit => ({
+    date: fileDate,
+    ageMonths: ageMonths ?? 0,
+    ageLabel: ageMonths != null ? formatAge(ageMonths) : '',
+    sex,
+    heightCm,
+    weightKg,
+    bmi: bmiVal,
+    heightZ: assessments.height?.z ?? null,
+    heightCentile: assessments.height?.centile ?? null,
+    weightZ: assessments.weight?.z ?? null,
+    weightCentile: assessments.weight?.centile ?? null,
+    bmiZ: assessments.bmi?.z ?? null,
+    bmiCentile: assessments.bmi?.centile ?? null,
+    source: sourceLabel,
+  });
+
+  const onExportPng = () => {
+    const svg = getSvg();
+    if (svg) void exportChartPng(svg, `${fileBase}_${chartMeasure}.png`);
+  };
+  const onExportPdf = () => {
+    const svg = getSvg();
+    if (svg) void exportReportPdf(svg, buildReportMeta(), `${fileBase}.pdf`);
+  };
+  const onExportCsv = () => exportCsv([buildCsvVisit()], `${fileBase}.csv`);
 
   return (
     <div className="app">
@@ -242,19 +300,34 @@ export default function App() {
               ))}
             </div>
           </div>
-          <GrowthChart
-            title={`${measureMeta.label}-for-age`}
-            unit={measureMeta.unit}
-            xUnit={xUnit}
-            minAge={minAge}
-            maxAge={maxAge}
-            curves={curves}
-            points={chartPoints}
-          />
-          <p className="chart-caption">
-            {infantChart ? 'WHO standards, 0–2 years' : 'CDC reference, 2–20 years'} · {sex} · centile
-            curves 3–97
-          </p>
+          <div ref={chartRef}>
+            <GrowthChart
+              title={`${measureMeta.label}-for-age`}
+              unit={measureMeta.unit}
+              xUnit={xUnit}
+              minAge={minAge}
+              maxAge={maxAge}
+              curves={curves}
+              points={chartPoints}
+            />
+          </div>
+          <div className="chart-foot">
+            <p className="chart-caption">
+              {infantChart ? 'WHO standards, 0–2 years' : 'CDC reference, 2–20 years'} · {sex} ·
+              centile curves 3–97
+            </p>
+            <div className="export-bar">
+              <button onClick={onExportPng} disabled={!hasResults}>
+                PNG
+              </button>
+              <button onClick={onExportPdf} disabled={!hasResults}>
+                PDF
+              </button>
+              <button onClick={onExportCsv} disabled={!hasResults}>
+                CSV
+              </button>
+            </div>
+          </div>
         </section>
       </main>
 
