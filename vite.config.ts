@@ -12,8 +12,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
       manifest: {
-        name: 'GrowthTrack',
-        short_name: 'GrowthTrack',
+        name: 'AMBGro',
+        short_name: 'AMBGro',
         description:
           'Digital WHO/CDC growth charts with exact LMS Z-scores and centiles. Works offline.',
         theme_color: '#2563eb',

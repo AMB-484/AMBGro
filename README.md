@@ -1,10 +1,10 @@
-# GrowthTrack
+# AMBGro
 
 Digital growth-charting for endocrinology. Enter a child's sex, age (or date of
 birth), height and weight, and get **exact LMS-based Z-scores and centiles** for
 height, weight and BMI, plotted on WHO/CDC growth charts — fully offline.
 
-Built by Dr. Awais Butt. Clinical decision support for qualified clinicians; not
+Built by Dr. Awais Muhammad Butt. Clinical decision support for qualified clinicians; not
 a substitute for clinical judgement.
 
 ## What works

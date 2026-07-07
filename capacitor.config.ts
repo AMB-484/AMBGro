@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.drawais.growthtrack',
-  appName: 'GrowthTrack',
+  appId: 'com.drawais.ambgro',
+  appName: 'AMBGro',
   webDir: 'dist',
 };
 

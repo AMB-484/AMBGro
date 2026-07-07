@@ -27,8 +27,8 @@ import {
 import type { Patient } from './store/patients';
 import './App.css';
 
-const APP_NAME = 'GrowthTrack';
-const DEVELOPER = 'Dr. Awais Butt';
+const APP_NAME = 'AMBGro';
+const DEVELOPER = 'Dr. Awais Muhammad Butt';
 
 const MEASURES: { key: Measure; label: string; unit: string }[] = [
   { key: 'height', label: 'Height / Length', unit: 'cm' },
