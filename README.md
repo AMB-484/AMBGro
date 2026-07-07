@@ -72,11 +72,15 @@ npm run validate   # run independent engine checks
 
 ## Getting it on your phone
 
-**Option A — install the PWA now (no build tooling):**
-1. Host the `dist/` folder anywhere over HTTPS (e.g. GitHub Pages, Netlify — both
-   free), or run `npm run preview` and open it on a phone on the same network.
-2. Open the URL in Android Chrome → menu → **Add to Home screen / Install app**.
-   It then launches full-screen and works offline.
+**Option A — install the PWA (free GitHub Pages hosting):**
+1. Push this repo to GitHub, then in the repo **Settings → Pages** set
+   **Source = "GitHub Actions"**. The included
+   [deploy-pages workflow](.github/workflows/deploy-pages.yml) then builds and
+   publishes the app automatically on every push to `main`.
+2. Open the published URL (`https://<user>.github.io/<repo>/`) in Android Chrome →
+   menu → **Add to Home screen / Install app**. It launches full-screen and works
+   offline. (All asset paths are relative, so it also works from any subpath or via
+   `npm run preview` locally.)
 
 **Option B — build a Play Store APK (Capacitor, in the cloud):**
 No local Android SDK is needed. Push this repo to GitHub, then run the
