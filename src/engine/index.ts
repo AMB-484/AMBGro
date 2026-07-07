@@ -34,3 +34,5 @@ export {
 } from './age';
 export { midParentalHeight, heightVelocity, correctedAgeMonths, TERM_WEEKS } from './clinical';
 export type { TargetHeight, Velocity } from './clinical';
+export { interpret } from './interpret';
+export type { Interpretation, Tone } from './interpret';

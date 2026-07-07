@@ -9,6 +9,7 @@ import {
   midParentalHeight,
   heightVelocity,
   correctedAgeMonths,
+  interpret,
   TERM_WEEKS,
   BOUNDARY_MONTHS,
   MAX_AGE_MONTHS,
@@ -23,6 +24,9 @@ import {
   savePatients,
   sortedVisits,
   uid,
+  exportPatientsJson,
+  parsePatientsJson,
+  mergePatients,
 } from './store/patients';
 import type { Patient } from './store/patients';
 import './App.css';
@@ -56,6 +60,19 @@ function valueForMeasure(measure: Measure, h: number | null, w: number | null): 
   return h && w ? bmiFrom(w, h) : null;
 }
 
+/**
+ * Effective (assessed/plotted) age of a saved visit: corrected for prematurity
+ * when the patient has a preterm gestational age, else chronological. Keeps saved
+ * records consistent with the live single-entry calculation.
+ */
+function visitAgeMonths(p: Patient, date: string): number {
+  const chrono = ageMonthsFromDates(new Date(p.dob), new Date(date));
+  if (p.gestWeeks != null && p.gestWeeks < TERM_WEEKS) {
+    return correctedAgeMonths(chrono, p.gestWeeks);
+  }
+  return chrono;
+}
+
 export default function App() {
   const [sex, setSex] = useState<Sex>('male');
   const [ageMode, setAgeMode] = useState<'dob' | 'age'>('dob');
@@ -77,18 +94,38 @@ export default function App() {
   const [patients, setPatients] = useState<Patient[]>(() => loadPatients());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
+  const [saveError, setSaveError] = useState(false);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const importRef = useRef<HTMLInputElement>(null);
+  const firstRun = useRef(true);
   const selectedPatient = patients.find((p) => p.id === selectedId) ?? null;
 
   useEffect(() => {
-    savePatients(patients);
+    // Skip the initial mount so we don't rewrite storage before any change.
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    setSaveError(!savePatients(patients));
   }, [patients]);
 
-  // when a patient is selected, drive sex/dob from the record
+  // on any patient switch (including back to ad-hoc), clear the transient inputs so a
+  // previous entry or context can't leak to the wrong child; then, if a patient is
+  // selected, drive its stored clinical context from the record.
   useEffect(() => {
+    setHeight('');
+    setWeight('');
+    setBoneAge('');
+    setFatherH('');
+    setMotherH('');
+    setGestAge('');
     if (selectedPatient) {
       setSex(selectedPatient.sex);
       setDob(selectedPatient.dob);
       setAgeMode('dob');
+      setVisit(today);
+      if (selectedPatient.gestWeeks != null) setGestAge(String(selectedPatient.gestWeeks));
+      setRefSet(selectedPatient.refSet ?? 'standard');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
@@ -137,12 +174,13 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ageValid, effAge, sex, refSet, heightCm, weightKg, bmiVal]);
 
-  // longitudinal points: saved visits for a selected patient, else the live entry
+  // longitudinal points: saved visits for a selected patient, else the live entry.
+  // Saved visits use corrected age for preterms, matching the live calculation.
   const chartPoints: PlottedPoint[] = useMemo(() => {
     if (selectedPatient) {
       return sortedVisits(selectedPatient)
         .map((v) => {
-          const am = ageMonthsFromDates(new Date(selectedPatient.dob), new Date(v.date));
+          const am = visitAgeMonths(selectedPatient, v.date);
           const val = valueForMeasure(chartMeasure, v.heightCm, v.weightKg);
           return val != null && am >= 0 && am <= MAX_AGE_MONTHS
             ? ({ age: am, value: val } as PlottedPoint)
@@ -156,14 +194,31 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPatient, patients, chartMeasure, ageValid, effAge, heightCm, weightKg, bmiVal]);
 
-  // chart window based on the most relevant age (latest visit, or the live entry)
-  const refAge =
-    selectedPatient && chartPoints.length
-      ? Math.max(...chartPoints.map((p) => p.age))
-      : effAge;
-  const infantChart = refAge != null && refAge < BOUNDARY_MONTHS;
-  const [minAge, maxAge] = infantChart ? [0, BOUNDARY_MONTHS] : [BOUNDARY_MONTHS, MAX_AGE_MONTHS];
-  const xUnit: 'months' | 'years' = infantChart ? 'months' : 'years';
+  // Choose the age window. Normally infant (0–2 y) or child (2–20 y). But when a
+  // patient's saved visits straddle the 2-year boundary, use a continuous window
+  // from birth so the whole trajectory shows on one WHO→CDC chart.
+  const ptAges = chartPoints.map((p) => p.age);
+  const spansBoundary =
+    selectedPatient != null &&
+    ptAges.some((a) => a < BOUNDARY_MONTHS) &&
+    ptAges.some((a) => a >= BOUNDARY_MONTHS);
+  const refAge = ptAges.length ? Math.max(...ptAges) : effAge;
+  const infantChart = !spansBoundary && refAge != null && refAge < BOUNDARY_MONTHS;
+  let minAge: number;
+  let maxAge: number;
+  let xUnit: 'months' | 'years';
+  if (spansBoundary) {
+    minAge = 0;
+    maxAge = Math.min(MAX_AGE_MONTHS, Math.max(36, Math.ceil(Math.max(...ptAges) / 12) * 12));
+    xUnit = 'years';
+  } else if (infantChart) {
+    [minAge, maxAge] = [0, BOUNDARY_MONTHS];
+    xUnit = 'months';
+  } else {
+    [minAge, maxAge] = [BOUNDARY_MONTHS, MAX_AGE_MONTHS];
+    xUnit = 'years';
+  }
+  const pointsOutOfWindow = chartPoints.filter((p) => p.age < minAge || p.age > maxAge).length;
   const measureMeta = MEASURES.find((m) => m.key === chartMeasure)!;
 
   const curves = useMemo(
@@ -187,8 +242,8 @@ export default function App() {
     const vs = sortedVisits(selectedPatient).filter((v) => v.heightCm != null);
     const out: Velocity[] = [];
     for (let i = 1; i < vs.length; i++) {
-      const a1 = ageMonthsFromDates(new Date(selectedPatient.dob), new Date(vs[i - 1].date));
-      const a2 = ageMonthsFromDates(new Date(selectedPatient.dob), new Date(vs[i].date));
+      const a1 = visitAgeMonths(selectedPatient, vs[i - 1].date);
+      const a2 = visitAgeMonths(selectedPatient, vs[i].date);
       const vel = heightVelocity(vs[i - 1].heightCm!, a1, vs[i].heightCm!, a2);
       if (vel) out.push(vel);
     }
@@ -196,6 +251,14 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPatient, patients]);
   const latestVelocity = velocities.at(-1) ?? null;
+
+  // plain-language interpretation flags (standard references only)
+  const interpretations = MEASURES.map(({ key, label }) => {
+    const a = assessments[key];
+    if (!a || effAge == null) return null;
+    const it = interpret(key, effAge, a.centile, refSet);
+    return it ? { key, measure: label, text: it.label, tone: it.tone } : null;
+  }).filter((x): x is NonNullable<typeof x> => x !== null);
 
   // overlays only make sense on the height chart for children
   const heightChart = chartMeasure === 'height' && !infantChart;
@@ -222,7 +285,15 @@ export default function App() {
   // ---- record actions ----
   const createPatient = () => {
     if (!newName.trim() || !dob) return;
-    const p: Patient = { id: uid(), name: newName.trim(), sex, dob, visits: [] };
+    const p: Patient = {
+      id: uid(),
+      name: newName.trim(),
+      sex,
+      dob,
+      gestWeeks: gestWeeks ?? null,
+      refSet,
+      visits: [],
+    };
     setPatients((prev) => [...prev, p]);
     setSelectedId(p.id);
     setNewName('');
@@ -304,7 +375,14 @@ export default function App() {
       weightCentile: aW?.centile ?? null,
       bmiZ: aB?.z ?? null,
       bmiCentile: aB?.centile ?? null,
-      source: forRefSet === 'down' ? 'Down' : am < BOUNDARY_MONTHS ? 'WHO' : 'CDC',
+      source:
+        forRefSet === 'down'
+          ? 'Down (Zemel)'
+          : forRefSet === 'turner'
+            ? 'Turner (Isojima)'
+            : am < BOUNDARY_MONTHS
+              ? 'WHO'
+              : 'CDC',
     };
   };
 
@@ -321,16 +399,45 @@ export default function App() {
       ? sortedVisits(selectedPatient).map((v) =>
           csvForVisit(
             v.date,
-            ageMonthsFromDates(new Date(selectedPatient.dob), new Date(v.date)),
+            visitAgeMonths(selectedPatient, v.date),
             v.heightCm,
             v.weightKg,
             selectedPatient.sex,
+            refSet,
           ),
         )
       : effAge != null
         ? [csvForVisit(ageMode === 'dob' ? visit : today, effAge, heightCm, weightKg, sex, refSet)]
         : [];
     if (rows.length) exportCsv(rows, `${fileBase}.csv`);
+  };
+
+  // ---- backup / restore (full patient database) ----
+  const onExportData = () => {
+    if (patients.length === 0) return;
+    const blob = new Blob([exportPatientsJson(patients)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ambgro-backup-${today}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setImportMsg(`Backed up ${patients.length} patient record(s).`);
+  };
+
+  const onImportData = async (file: File) => {
+    try {
+      const incoming = parsePatientsJson(await file.text());
+      const existingIds = new Set(patients.map((p) => p.id));
+      const added = incoming.filter((p) => !existingIds.has(p.id)).length;
+      const updated = incoming.length - added;
+      setPatients((prev) => mergePatients(prev, incoming));
+      setImportMsg(`Imported ${incoming.length} record(s): ${added} added, ${updated} updated.`);
+    } catch (err) {
+      setImportMsg(err instanceof Error ? err.message : 'Could not read that backup file.');
+    }
   };
 
   const canExport = hasResults || (selectedPatient != null && selectedPatient.visits.length > 0);
@@ -518,6 +625,14 @@ export default function App() {
 
         <section className="panel records" aria-label="Patient records">
           <h2>Records</h2>
+
+          {saveError && (
+            <p className="banner-error">
+              ⚠ Records could not be saved to this device (storage full or disabled). Export a backup
+              to avoid losing data.
+            </p>
+          )}
+
           <div className="field">
             <span className="field-label">Patient</span>
             <select
@@ -533,6 +648,27 @@ export default function App() {
               ))}
             </select>
           </div>
+
+          <div className="backup-bar">
+            <button onClick={onExportData} disabled={patients.length === 0} title="Download all records as a JSON backup">
+              Export data
+            </button>
+            <button onClick={() => importRef.current?.click()} title="Restore records from a backup file">
+              Import data
+            </button>
+            <input
+              ref={importRef}
+              type="file"
+              accept="application/json,.json"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void onImportData(f);
+                e.target.value = '';
+              }}
+            />
+          </div>
+          {importMsg && <p className="hint" role="status">{importMsg}</p>}
 
           {!selectedPatient ? (
             <div className="new-patient">
@@ -569,10 +705,7 @@ export default function App() {
                 </thead>
                 <tbody>
                   {sortedVisits(selectedPatient).map((v) => {
-                    const am = ageMonthsFromDates(
-                      new Date(selectedPatient.dob),
-                      new Date(v.date),
-                    );
+                    const am = visitAgeMonths(selectedPatient, v.date);
                     return (
                       <tr key={v.id}>
                         <td>{v.date}</td>
@@ -628,6 +761,15 @@ export default function App() {
               })}
             </tbody>
           </table>
+          {interpretations.length > 0 && (
+            <div className="interp" aria-label="Interpretation">
+              {interpretations.map((f) => (
+                <span key={f.key} className={`interp-chip ${f.tone}`} title={f.measure}>
+                  {f.text}
+                </span>
+              ))}
+            </div>
+          )}
           {refSet === 'turner' && (
             <p className="note">
               Turner reference: <strong>height-for-age only</strong>, girls, ages 1–18 y (Isojima
@@ -697,15 +839,23 @@ export default function App() {
                 ? 'Down syndrome (Zemel 2015)'
                 : refSet === 'turner'
                   ? 'Turner syndrome (Isojima 2010)'
-                  : infantChart
-                    ? 'WHO standards, 0–2 years'
-                    : 'CDC reference, 2–20 years'}{' '}
+                  : spansBoundary
+                    ? 'WHO → CDC, 0–20 years'
+                    : infantChart
+                      ? 'WHO standards, 0–2 years'
+                      : 'CDC reference, 2–20 years'}{' '}
               · {sex} ·
               {selectedPatient ? ` ${chartPoints.length} visit(s)` : ' centile curves 3–97'}
             </p>
             {curves.every((c) => c.points.length === 0) && (
               <p className="note">
                 No reference curve for this measure/sex/age in the selected chart.
+              </p>
+            )}
+            {pointsOutOfWindow > 0 && (
+              <p className="note">
+                {pointsOutOfWindow} visit(s) fall outside this age range and aren't shown on this
+                chart.
               </p>
             )}
             <div className="export-bar">

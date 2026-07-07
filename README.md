@@ -15,14 +15,24 @@ a substitute for clinical judgement.
   2-year boundary. Age from **date of birth** (exact, to the day) or entered directly.
 - **CDC Extended BMI-for-age (2022)** for severe obesity — z-scores above the 95th
   percentile don't saturate.
+- **Plain-language interpretation** of the standard-reference results: short/tall
+  stature (<3rd / >97th centile) and CDC BMI weight-status categories
+  (underweight / overweight / obese).
 - **Export**: high-res PNG, a PDF clinical report, and CSV of measurements + z/centiles.
 - **Saved patient records** (offline, localStorage): visits plot as a longitudinal
-  trajectory; per-patient CSV.
+  trajectory; per-patient CSV. Each record stores the child's gestational age and
+  reference set, so saved visits, velocity and CSV all use the same corrected age and
+  chart as the live calculation. A series that crosses age 2 is shown on one
+  continuous WHO→CDC chart.
+- **Backup & restore**: export the whole patient database to a JSON file and import
+  it back (merge by record), so records survive a cache clear or device change.
 - **Endocrine tools**: mid-parental (target) height (Tanner, ±10 cm) as a chart band;
   height velocity between visits; bone age plotted on the height chart.
 - **Down syndrome** reference charts (Zemel 2015), toggled against the standard.
-- **Prematurity**: corrected age from gestational age, applied to ≤24 months.
-- **Installable PWA** — works fully offline; can be added to an Android home screen.
+- **Prematurity**: corrected age from gestational age, applied to ≤24 months — for
+  both ad-hoc entries and saved longitudinal records.
+- **Installable PWA** — works fully offline; can be added to an Android home screen,
+  with PNG + maskable icons for the launcher and splash screen.
 - 100% offline: all reference data is bundled into the app.
 
 ### Deferred / not yet built

@@ -120,10 +120,17 @@ export function GrowthChart({
   const xScale = (age: number) => M.left + ((age - minAge) / (maxAge - minAge)) * plotW;
   const yScale = (v: number) => M.top + (1 - (v - yMin) / (yMax - yMin)) * plotH;
 
-  const xStep = xUnit === 'years' ? 24 : 3;
+  // Tick every 3 months on infant charts; on year charts use 1-year ticks for
+  // short spans (e.g. a longitudinal series crossing age 2) and 2-year otherwise.
+  const xStep = xUnit === 'years' ? (maxAge - minAge <= 60 ? 12 : 24) : 3;
   const xTickVals: number[] = [];
   for (let a = Math.ceil(minAge / xStep) * xStep; a <= maxAge + 1e-9; a += xStep) xTickVals.push(a);
   const yTicks = niceTicks(yMin, yMax, 8);
+
+  // Only plot patient points that fall within the displayed age window, so a
+  // measurement on the other side of the WHO/CDC boundary can't render outside
+  // the plot frame.
+  const visiblePoints = points.filter((p) => p.age >= minAge && p.age <= maxAge);
 
   const pathFor = (curve: ReferenceCurve) =>
     curve.points
@@ -201,9 +208,9 @@ export function GrowthChart({
         })}
 
         {/* patient longitudinal line */}
-        {points.length > 1 && (
+        {visiblePoints.length > 1 && (
           <path
-            d={points
+            d={visiblePoints
               .map((p, i) => `${i === 0 ? 'M' : 'L'}${xScale(p.age).toFixed(1)},${yScale(p.value).toFixed(1)}`)
               .join(' ')}
             className="patient-line"
@@ -212,7 +219,7 @@ export function GrowthChart({
         )}
 
         {/* patient points */}
-        {points.map((p, i) => (
+        {visiblePoints.map((p, i) => (
           <circle key={i} cx={xScale(p.age)} cy={yScale(p.value)} r={5} className="patient-point" />
         ))}
 
