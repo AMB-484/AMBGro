@@ -59,11 +59,16 @@ Corrected (adjusted) age is computed in-app as chronological age −
 standards. (Neonatal Fenton/INTERGROWTH-21st preterm *chart* plotting is a future
 addition; `fenton_2003`/`olsen` LMS are present in the peditools dataset if needed.)
 
-## Turner syndrome (not yet included)
+## Turner syndrome — `turner/turner_isojima_height.csv`
 
-Turner references are population-specific (multiple national datasets, no single
-authoritative machine-readable LMS). Deferred pending a clinician-chosen reference;
-the reference-set framework already supports adding it as another toggle.
+Height-for-age for girls with Turner syndrome, **Isojima et al. 2010** (Japanese
+reference; largest sample, LMS method, recommended for growth monitoring >2y). The
+mean + SD by age were taken from the Isojima column of Table 3 in Bertapelli et al.
+2014 (BioMed Research International, PMC4052048), a systematic review reproducing
+each source study's values. Turner height-SDS is conventionally `(height − mean)/SD`,
+i.e. LMS with **L = 1, M = mean, S = SD/mean**. Girls only, height only, ages 1–18 y.
+Final height ≈139.5 cm at 18y (matches known Turner adult height). Selected via the
+"Turner syndrome" reference toggle.
 
 ## Note on the 2-year handoff
 

@@ -210,7 +210,8 @@ export default function App() {
   const hasResults = Object.keys(assessments).length > 0;
   const hasMeasurement = heightCm != null || weightKg != null;
   const segmentLabel = effAge != null && effAge < BOUNDARY_MONTHS ? 'WHO' : 'CDC';
-  const sourceLabel = refSet === 'down' ? 'Down (Zemel)' : segmentLabel;
+  const sourceLabel =
+    refSet === 'down' ? 'Down (Zemel)' : refSet === 'turner' ? 'Turner (Isojima)' : segmentLabel;
   const patientLocked = selectedPatient != null;
 
   const nameSlug = selectedPatient
@@ -370,17 +371,15 @@ export default function App() {
 
           <div className="field">
             <span className="field-label">Reference chart</span>
-            <div className="segmented">
-              <button
-                className={refSet === 'standard' ? 'on' : ''}
-                onClick={() => setRefSet('standard')}
-              >
-                Standard
-              </button>
-              <button className={refSet === 'down' ? 'on' : ''} onClick={() => setRefSet('down')}>
-                Down syndrome
-              </button>
-            </div>
+            <select
+              className="select"
+              value={refSet}
+              onChange={(e) => setRefSet(e.target.value as RefSet)}
+            >
+              <option value="standard">Standard (WHO / CDC)</option>
+              <option value="down">Down syndrome (Zemel 2015)</option>
+              <option value="turner">Turner syndrome (Isojima, girls)</option>
+            </select>
           </div>
 
           <div className="field">
@@ -629,6 +628,13 @@ export default function App() {
               })}
             </tbody>
           </table>
+          {refSet === 'turner' && (
+            <p className="note">
+              Turner reference: <strong>height-for-age only</strong>, girls, ages 1–18 y (Isojima
+              et al. 2010).
+              {sex === 'male' && ' Turner syndrome (45,X) affects girls — select Female for results.'}
+            </p>
+          )}
           {assessments.bmi?.method === 'extended-BMI' && (
             <p className="note">
               BMI ≥ 95th percentile: z-score &amp; centile use the <strong>CDC Extended BMI-for-age
@@ -689,12 +695,19 @@ export default function App() {
             <p className="chart-caption">
               {refSet === 'down'
                 ? 'Down syndrome (Zemel 2015)'
-                : infantChart
-                  ? 'WHO standards, 0–2 years'
-                  : 'CDC reference, 2–20 years'}{' '}
+                : refSet === 'turner'
+                  ? 'Turner syndrome (Isojima 2010)'
+                  : infantChart
+                    ? 'WHO standards, 0–2 years'
+                    : 'CDC reference, 2–20 years'}{' '}
               · {sex} ·
               {selectedPatient ? ` ${chartPoints.length} visit(s)` : ' centile curves 3–97'}
             </p>
+            {curves.every((c) => c.points.length === 0) && (
+              <p className="note">
+                No reference curve for this measure/sex/age in the selected chart.
+              </p>
+            )}
             <div className="export-bar">
               <button onClick={onExportPng} disabled={!canExport}>
                 PNG

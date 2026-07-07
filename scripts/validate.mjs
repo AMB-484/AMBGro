@@ -112,5 +112,15 @@ function check(name, got, want, tol) {
   check('corrected age 32wk @3mo chrono ~ 1.16mo', corrected, 1.16, 0.02);
 }
 
+// 9) Turner (Isojima): height-SDS = (x - mean)/SD, median @10y = 118.82,
+//    adult height @18y ~ 139.5cm. A typical girl (~138cm @10y) is very high on Turner.
+{
+  const [, L, M, S] = lookup('height', 'female', 120, refs.turner);
+  check('Turner female height median @10y = 118.82', M, 118.82, 0.01);
+  check('Turner @10y x=mean -> z=0', zFromMeasurement(118.82, L, M, S), 0, 1e-9);
+  const M18 = lookup('height', 'female', 216, refs.turner)[2];
+  check('Turner female final height @18y ~ 139.5', M18, 139.51, 0.01);
+}
+
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

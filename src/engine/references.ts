@@ -13,7 +13,9 @@ export function sourceForAge(ageMonths: number): Source {
 }
 
 function measureRefs(measure: Measure, refSet: RefSet): MeasureRefs {
-  return refSet === 'down' ? references.down[measure] : references.data[measure];
+  if (refSet === 'down') return references.down[measure];
+  if (refSet === 'turner') return references.turner[measure];
+  return references.data[measure];
 }
 
 function seriesFor(measure: Measure, sex: Sex, source: Source, refSet: RefSet): LmsPoint[] {

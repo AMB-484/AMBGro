@@ -148,6 +148,27 @@ function parseDown(file) {
   return out;
 }
 
+// Turner syndrome height reference (Isojima et al. 2010, Japanese girls), from
+// the published mean+SD by age. Turner height-SDS = (height - mean)/SD, which is
+// LMS with L=1, M=mean, S=SD/mean. Girls only; height only.
+function parseTurner(file) {
+  const text = readFileSync(join(SRC, 'turner', file), 'utf8').trim();
+  const lines = text.split(/\r?\n/);
+  const empty = () => ({ who: { male: [], female: [] }, cdc: { male: [], female: [] } });
+  const out = { height: empty(), weight: empty(), bmi: empty() };
+  for (let r = 1; r < lines.length; r++) {
+    const [ageY, mean, sd] = lines[r].split(',').map(parseFloat);
+    const ageMonths = ageY * 12;
+    const point = [round(ageMonths), 1, round(mean), round(sd / mean)]; // L=1, M=mean, S=SD/mean
+    const slot = ageMonths < WHO_MAX_MONTHS ? 'who' : 'cdc';
+    out.height[slot].female.push(point);
+  }
+  console.log(
+    `  TURNER ${file.padEnd(26)} female height who=${out.height.who.female.length} cdc=${out.height.cdc.female.length}`,
+  );
+  return out;
+}
+
 function round(n) {
   return Math.round(n * 1e6) / 1e6;
 }
@@ -161,6 +182,7 @@ const refs = {
 
 const extendedBmi = parseExtBmi('bmi-age-2022.csv');
 const down = parseDown('zemel_2015.csv');
+const turner = parseTurner('turner_isojima_height.csv');
 
 const payload = {
   meta: {
@@ -172,12 +194,14 @@ const payload = {
       cdc: 'CDC 2000 Growth Charts (stature/weight/BMI-for-age), LMS, 24 to 240 months',
       extendedBmi: 'CDC Extended BMI-for-age (2022): sigma + P95 for BMI >= 95th pct, 24-240 months',
       down: 'Zemel 2015 Down syndrome charts (via peditools): height/weight 0-20y, BMI 2-20y',
+      turner: 'Turner syndrome height (Isojima et al. 2010, girls 1-18y); L=1, M=mean, S=SD/mean',
     },
     note: 'height = recumbent length (0-2y) then standing stature (2-20y)',
   },
   data: refs,
   extendedBmi,
   down,
+  turner,
 };
 
 mkdirSync(OUT_DIR, { recursive: true });

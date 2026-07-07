@@ -4,7 +4,7 @@ export type Sex = 'male' | 'female';
 export type Measure = 'height' | 'weight' | 'bmi';
 export type Source = 'WHO' | 'CDC';
 /** Which reference population the charts describe. */
-export type RefSet = 'standard' | 'down';
+export type RefSet = 'standard' | 'down' | 'turner';
 
 /** One reference point: [ageMonths, L, M, S]. */
 export type LmsPoint = [age: number, L: number, M: number, S: number];
@@ -33,6 +33,7 @@ export interface ReferencesFile {
   data: Record<Measure, MeasureRefs>;
   extendedBmi: { male: ExtBmiPoint[]; female: ExtBmiPoint[] };
   down: Record<Measure, MeasureRefs>;
+  turner: Record<Measure, MeasureRefs>;
 }
 
 export interface Lms {
