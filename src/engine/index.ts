@@ -38,3 +38,21 @@ export { interpret } from './interpret';
 export type { Interpretation, Tone } from './interpret';
 export { predictAdultHeight, bayleyPinneauMeta } from './bayleyPinneau';
 export type { AdultHeightPrediction, Maturity } from './bayleyPinneau';
+export {
+  assessPuberty,
+  tannerDescriptor,
+  tannerBadge,
+  splNorm,
+  hasPubertyData,
+  maxTesticularVol,
+  PRADER_VOLUMES,
+  TESTIS_ONSET_ML,
+  ONSET_LIMITS,
+} from './puberty';
+export type {
+  PubertyAssessment,
+  PubertyWarning,
+  WarningSeverity,
+  TannerKind,
+  SplNorm,
+} from './puberty';

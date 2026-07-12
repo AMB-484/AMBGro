@@ -28,6 +28,13 @@ a substitute for clinical judgement.
   it back (merge by record), so records survive a cache clear or device change.
 - **Endocrine tools**: mid-parental (target) height (Tanner, ±10 cm) as a chart band;
   height velocity between visits; bone age plotted on the height chart.
+- **Puberty assessment & trajectory**: a tap-based *Clinical Assessment Pad* — Tanner
+  staging cards (stored as integers 1–5), a Prader orchidometer with Link-L/R, and a
+  menarche tracker — captured per visit. A **height-velocity chart** overlays the
+  pubertal milestones (testicular volume ≥ 4 mL / G4 for boys, B2 for girls, menarche
+  marker) and flags whether peak height velocity aligns with them. Passive warnings:
+  precocious / delayed puberty, menarche-before-thelarche asynchrony, and low
+  stretched penile length (Feldman −2.5 SD).
 - **Adult-height prediction (Bayley–Pinneau, EXPERIMENTAL)**: predicts adult height
   from current height + skeletal (bone) age, auto-selecting the skeletal-maturity
   category, and compares it to the parental target. Clearly badged *not for clinical

@@ -11,13 +11,29 @@ import {
   correctedAgeMonths,
   interpret,
   predictAdultHeight,
+  assessPuberty,
+  hasPubertyData,
+  maxTesticularVol,
+  tannerBadge,
+  TESTIS_ONSET_ML,
   TERM_WEEKS,
   BOUNDARY_MONTHS,
   MAX_AGE_MONTHS,
 } from './engine';
-import type { Assessment, Maturity, Measure, RefSet, Sex, Velocity } from './engine';
+import type {
+  Assessment,
+  Maturity,
+  Measure,
+  PubertyAssessment,
+  RefSet,
+  Sex,
+  Velocity,
+} from './engine';
 import { GrowthChart } from './components/GrowthChart';
 import type { PlottedPoint, TargetBand, ChartMarker } from './components/GrowthChart';
+import { PubertyPad } from './components/PubertyPad';
+import { VelocityChart } from './components/VelocityChart';
+import type { VelocityPoint, Milestone } from './components/VelocityChart';
 import { exportChartPng, exportReportPdf, exportCsv } from './export/chartExport';
 import type { CsvVisit, ReportMeta } from './export/chartExport';
 import {
@@ -29,7 +45,7 @@ import {
   parsePatientsJson,
   mergePatients,
 } from './store/patients';
-import type { Patient } from './store/patients';
+import type { Patient, Visit } from './store/patients';
 import './App.css';
 
 const APP_NAME = 'AMBGro';
@@ -67,6 +83,27 @@ const MATURITY_LABEL: Record<Maturity, string> = {
   delayed: 'delayed (retarded)',
 };
 
+/** Chronological age (years) at a date, from date of birth. */
+function ageYearsAt(dob: string, date: string): number {
+  return ageMonthsFromDates(new Date(dob), new Date(date)) / 12;
+}
+
+/** Compact one-line pubertal summary for the visits table. */
+function pubertySummary(sex: Sex, p?: PubertyAssessment): string {
+  if (!p) return '';
+  const parts: string[] = [];
+  if (sex === 'male') {
+    if (p.tannerGenitalia) parts.push(tannerBadge('genitalia', p.tannerGenitalia));
+    const tv = maxTesticularVol(p);
+    if (tv != null) parts.push(`${tv}mL`);
+  } else {
+    if (p.tannerBreast) parts.push(tannerBadge('breast', p.tannerBreast));
+    if (p.menarcheAchieved) parts.push('M+');
+  }
+  if (p.tannerPubicHair) parts.push(tannerBadge('pubicHair', p.tannerPubicHair));
+  return parts.join(' ');
+}
+
 /**
  * Effective (assessed/plotted) age of a saved visit: corrected for prematurity
  * when the patient has a preterm gestational age, else chronological. Keeps saved
@@ -95,7 +132,19 @@ export default function App() {
   const [gestAge, setGestAge] = useState('');
   const [refSet, setRefSet] = useState<RefSet>('standard');
   const [chartMeasure, setChartMeasure] = useState<Measure>('height');
+  const [chartView, setChartView] = useState<'growth' | 'velocity'>('growth');
+  const [puberty, setPuberty] = useState<PubertyAssessment>({});
   const chartRef = useRef<HTMLDivElement>(null);
+
+  const patchPuberty = (patch: Partial<PubertyAssessment>) =>
+    setPuberty((prev) => {
+      const next = { ...prev, ...patch };
+      // strip keys explicitly cleared to undefined so hasPubertyData stays honest
+      for (const k of Object.keys(patch) as (keyof PubertyAssessment)[]) {
+        if (patch[k] === undefined) delete next[k];
+      }
+      return next;
+    });
 
   // ---- patient records ----
   const [patients, setPatients] = useState<Patient[]>(() => loadPatients());
@@ -126,6 +175,8 @@ export default function App() {
     setFatherH('');
     setMotherH('');
     setGestAge('');
+    setPuberty({});
+    setChartView('growth');
     if (selectedPatient) {
       setSex(selectedPatient.sex);
       setDob(selectedPatient.dob);
@@ -159,6 +210,7 @@ export default function App() {
   const heightCm = num(height);
   const weightKg = num(weight);
   const bmiVal = heightCm && weightKg ? bmiFrom(weightKg, heightCm) : null;
+  const hasMeasurement = heightCm != null || weightKg != null;
 
   const values: Record<Measure, number | null> = {
     height: heightCm,
@@ -167,6 +219,26 @@ export default function App() {
   };
 
   const ageValid = effAge != null && effAge >= 0 && effAge <= MAX_AGE_MONTHS;
+
+  // Live "preview" of the current entry, merged into the selected patient's saved
+  // visits so height, velocity and pubertal milestones plot in real time — before
+  // the visit is saved. Replaces any saved visit sharing the same date.
+  const previewVisit: Visit | null =
+    selectedPatient && (hasMeasurement || hasPubertyData(puberty))
+      ? {
+          id: '__preview__',
+          date: visit,
+          heightCm,
+          weightKg,
+          ...(hasPubertyData(puberty) ? { puberty } : {}),
+        }
+      : null;
+  const effectiveVisits: Visit[] = selectedPatient
+    ? [
+        ...sortedVisits(selectedPatient).filter((v) => !previewVisit || v.date !== previewVisit.date),
+        ...(previewVisit ? [previewVisit] : []),
+      ].sort((a, b) => a.date.localeCompare(b.date))
+    : [];
 
   const assessments = useMemo(() => {
     const out: Partial<Record<Measure, Assessment>> = {};
@@ -181,25 +253,23 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ageValid, effAge, sex, refSet, heightCm, weightKg, bmiVal]);
 
-  // longitudinal points: saved visits for a selected patient, else the live entry.
-  // Saved visits use corrected age for preterms, matching the live calculation.
-  const chartPoints: PlottedPoint[] = useMemo(() => {
-    if (selectedPatient) {
-      return sortedVisits(selectedPatient)
+  // longitudinal points: the selected patient's visits (incl. the live preview),
+  // else the live ad-hoc entry. Saved visits use corrected age for preterms.
+  const chartPoints: PlottedPoint[] = selectedPatient
+    ? effectiveVisits
         .map((v) => {
           const am = visitAgeMonths(selectedPatient, v.date);
           const val = valueForMeasure(chartMeasure, v.heightCm, v.weightKg);
           return val != null && am >= 0 && am <= MAX_AGE_MONTHS
-            ? ({ age: am, value: val } as PlottedPoint)
+            ? ({ age: am, value: val, preview: v.id === '__preview__' } as PlottedPoint)
             : null;
         })
-        .filter((p): p is PlottedPoint => p !== null);
-    }
-    if (!ageValid || effAge == null) return [];
-    const v = values[chartMeasure];
-    return v == null ? [] : [{ age: effAge, value: v }];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPatient, patients, chartMeasure, ageValid, effAge, heightCm, weightKg, bmiVal]);
+        .filter((p): p is PlottedPoint => p !== null)
+    : !ageValid || effAge == null
+      ? []
+      : values[chartMeasure] == null
+        ? []
+        : [{ age: effAge, value: values[chartMeasure]! }];
 
   // Choose the age window. Normally infant (0–2 y) or child (2–20 y). But when a
   // patient's saved visits straddle the 2-year boundary, use a continuous window
@@ -254,10 +324,10 @@ export default function App() {
       ? adultPrediction.predictedCm >= target.low && adultPrediction.predictedCm <= target.high
       : null;
 
-  // height velocity between consecutive visits of the selected patient
-  const velocities = useMemo<Velocity[]>(() => {
+  // height velocity between consecutive visits (incl. the live preview) of the patient
+  const velocities: Velocity[] = (() => {
     if (!selectedPatient) return [];
-    const vs = sortedVisits(selectedPatient).filter((v) => v.heightCm != null);
+    const vs = effectiveVisits.filter((v) => v.heightCm != null);
     const out: Velocity[] = [];
     for (let i = 1; i < vs.length; i++) {
       const a1 = visitAgeMonths(selectedPatient, vs[i - 1].date);
@@ -266,9 +336,69 @@ export default function App() {
       if (vel) out.push(vel);
     }
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPatient, patients]);
+  })();
   const latestVelocity = velocities.at(-1) ?? null;
+
+  // ---- puberty ----
+  const chronoAgeYears = ageMonths != null ? ageMonths / 12 : null;
+  const pubertyWarnings = assessPuberty(sex, chronoAgeYears, puberty);
+
+  // velocity points (cm/yr) plotted at the midpoint age of each interval
+  const velocityPoints: VelocityPoint[] = velocities.map((v) => ({
+    ageYears: (v.fromAgeMonths + v.toAgeMonths) / 2 / 12,
+    cmPerYear: v.cmPerYear,
+  }));
+
+  // pubertal milestones + menarche marker, from the selected patient's visits
+  const firstAgeWhere = (pred: (p: PubertyAssessment) => boolean): number | null => {
+    if (!selectedPatient) return null;
+    for (const v of effectiveVisits) {
+      if (v.puberty && pred(v.puberty)) return ageYearsAt(selectedPatient.dob, v.date);
+    }
+    return null;
+  };
+  const milestones: Milestone[] = [];
+  let menarcheAgeYears: number | null = null;
+  if (selectedPatient) {
+    if (sex === 'male') {
+      const tvOnset = firstAgeWhere((p) => (maxTesticularVol(p) ?? 0) >= TESTIS_ONSET_ML);
+      if (tvOnset != null) milestones.push({ ageYears: tvOnset, label: 'TV≥4', tone: 'onset' });
+      const g4 = firstAgeWhere((p) => (p.tannerGenitalia ?? 0) >= 4);
+      if (g4 != null) milestones.push({ ageYears: g4, label: 'G4', tone: 'phv' });
+      const g2 = firstAgeWhere((p) => (p.tannerGenitalia ?? 0) >= 2);
+      if (g2 != null) milestones.push({ ageYears: g2, label: 'G2', tone: 'other' });
+    } else {
+      const b2 = firstAgeWhere((p) => (p.tannerBreast ?? 0) >= 2);
+      if (b2 != null) milestones.push({ ageYears: b2, label: 'B2', tone: 'onset' });
+      const b4 = firstAgeWhere((p) => (p.tannerBreast ?? 0) >= 4);
+      if (b4 != null) milestones.push({ ageYears: b4, label: 'B4', tone: 'other' });
+      for (const v of effectiveVisits) {
+        const md = v.puberty?.menarcheDate;
+        if (md) {
+          menarcheAgeYears = ageYearsAt(selectedPatient.dob, `${md}-01`);
+          break;
+        }
+      }
+    }
+  }
+  const peakAgeYears = velocityPoints.length
+    ? velocityPoints.reduce((b, p) => (p.cmPerYear > b.cmPerYear ? p : b), velocityPoints[0]).ageYears
+    : null;
+  let alignNote: string | null = null;
+  if (peakAgeYears != null) {
+    const ref =
+      sex === 'male'
+        ? milestones.find((m) => m.label === 'G4')
+        : milestones.find((m) => m.label === 'B2');
+    if (ref) {
+      const d = Math.abs(peakAgeYears - ref.ageYears);
+      alignNote =
+        d <= 1.5
+          ? `Peak height velocity (${peakAgeYears.toFixed(1)} y) aligns with ${ref.label} at ${ref.ageYears.toFixed(1)} y — as expected.`
+          : `Peak height velocity (${peakAgeYears.toFixed(1)} y) is ${d.toFixed(1)} y from ${ref.label} (${ref.ageYears.toFixed(1)} y) — review pubertal tempo.`;
+    }
+  }
+  const showVelocity = chartView === 'velocity' && selectedPatient != null;
 
   // plain-language interpretation flags (standard references only)
   const interpretations = MEASURES.map(({ key, label }) => {
@@ -289,7 +419,7 @@ export default function App() {
 
   const ageOutOfRange = effAge != null && effAge > MAX_AGE_MONTHS;
   const hasResults = Object.keys(assessments).length > 0;
-  const hasMeasurement = heightCm != null || weightKg != null;
+  const canSaveVisit = hasMeasurement || hasPubertyData(puberty);
   const segmentLabel = effAge != null && effAge < BOUNDARY_MONTHS ? 'WHO' : 'CDC';
   const sourceLabel =
     refSet === 'down' ? 'Down (Zemel)' : refSet === 'turner' ? 'Turner (Isojima)' : segmentLabel;
@@ -318,11 +448,18 @@ export default function App() {
   };
 
   const saveVisit = () => {
-    if (!selectedPatient || !hasMeasurement) return;
-    const v = { id: uid(), date: visit, heightCm, weightKg };
+    if (!selectedPatient || !canSaveVisit) return;
+    const v: (typeof selectedPatient.visits)[number] = {
+      id: uid(),
+      date: visit,
+      heightCm,
+      weightKg,
+      ...(hasPubertyData(puberty) ? { puberty: { ...puberty } } : {}),
+    };
     setPatients((prev) =>
       prev.map((p) => (p.id === selectedPatient.id ? { ...p, visits: [...p.visits, v] } : p)),
     );
+    setPuberty({}); // fresh pad for the next visit
   };
 
   const deleteVisit = (visitId: string) => {
@@ -406,7 +543,15 @@ export default function App() {
 
   const onExportPng = () => {
     const svg = getSvg();
-    if (svg) void exportChartPng(svg, `${fileBase}_${chartMeasure}.png`);
+    if (!svg) return;
+    const subtitle = showVelocity
+      ? `Height velocity · ${sex}${selectedPatient ? ` · ${selectedPatient.name}` : ''}`
+      : `${measureMeta.label}-for-age · ${sourceLabel} · ${sex}${selectedPatient ? ` · ${selectedPatient.name}` : ''}`;
+    void exportChartPng(svg, `${fileBase}_${showVelocity ? 'velocity' : chartMeasure}.png`, {
+      title: APP_NAME,
+      byline: `by ${DEVELOPER}`,
+      subtitle,
+    });
   };
   const onExportPdf = () => {
     const svg = getSvg();
@@ -471,28 +616,8 @@ export default function App() {
       </header>
 
       <main className="layout">
-        <section className="panel inputs" aria-label="Patient inputs">
+        <section className="panel inputs" aria-label="Measurement">
           <h2>Measurement</h2>
-
-          <div className="field">
-            <span className="field-label">Sex</span>
-            <div className="segmented">
-              <button
-                className={sex === 'male' ? 'on' : ''}
-                disabled={patientLocked}
-                onClick={() => setSex('male')}
-              >
-                Male
-              </button>
-              <button
-                className={sex === 'female' ? 'on' : ''}
-                disabled={patientLocked}
-                onClick={() => setSex('female')}
-              >
-                Female
-              </button>
-            </div>
-          </div>
 
           <div className="field">
             <span className="field-label">Reference chart</span>
@@ -506,56 +631,6 @@ export default function App() {
               <option value="turner">Turner syndrome (Isojima, girls)</option>
             </select>
           </div>
-
-          <div className="field">
-            <span className="field-label">Age input</span>
-            <div className="segmented">
-              <button
-                className={ageMode === 'dob' ? 'on' : ''}
-                disabled={patientLocked}
-                onClick={() => setAgeMode('dob')}
-              >
-                Date of birth
-              </button>
-              <button
-                className={ageMode === 'age' ? 'on' : ''}
-                disabled={patientLocked}
-                onClick={() => setAgeMode('age')}
-              >
-                Enter age
-              </button>
-            </div>
-          </div>
-
-          {ageMode === 'dob' ? (
-            <div className="grid2">
-              <label>
-                Date of birth
-                <input
-                  type="date"
-                  value={dob}
-                  max={visit}
-                  disabled={patientLocked}
-                  onChange={(e) => setDob(e.target.value)}
-                />
-              </label>
-              <label>
-                Date of visit
-                <input type="date" value={visit} onChange={(e) => setVisit(e.target.value)} />
-              </label>
-            </div>
-          ) : (
-            <div className="grid2">
-              <label>
-                Years
-                <input type="number" min="0" max="20" value={ageYears} onChange={(e) => setAgeYears(e.target.value)} />
-              </label>
-              <label>
-                Months
-                <input type="number" min="0" max="11" value={ageMonthsInput} onChange={(e) => setAgeMonthsInput(e.target.value)} />
-              </label>
-            </div>
-          )}
 
           <div className="grid2">
             <label>
@@ -646,6 +721,103 @@ export default function App() {
               for this maturity category.
             </p>
           )}
+        </section>
+
+        <section className="panel patient" aria-label="Patient">
+          <h2>Patient</h2>
+
+          {saveError && (
+            <p className="banner-error">
+              ⚠ Records could not be saved to this device (storage full or disabled). Export a backup
+              to avoid losing data.
+            </p>
+          )}
+
+          <div className="field">
+            <span className="field-label">Record</span>
+            <select
+              className="select"
+              value={selectedId ?? ''}
+              onChange={(e) => setSelectedId(e.target.value || null)}
+            >
+              <option value="">— Ad-hoc (one-time, no record) —</option>
+              {patients.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.sex[0].toUpperCase()}, {p.visits.length}v)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="field">
+            <span className="field-label">Sex</span>
+            <div className="segmented">
+              <button
+                className={sex === 'male' ? 'on' : ''}
+                disabled={patientLocked}
+                onClick={() => setSex('male')}
+              >
+                Male
+              </button>
+              <button
+                className={sex === 'female' ? 'on' : ''}
+                disabled={patientLocked}
+                onClick={() => setSex('female')}
+              >
+                Female
+              </button>
+            </div>
+          </div>
+
+          <div className="field">
+            <span className="field-label">Age input</span>
+            <div className="segmented">
+              <button
+                className={ageMode === 'dob' ? 'on' : ''}
+                disabled={patientLocked}
+                onClick={() => setAgeMode('dob')}
+              >
+                Date of birth
+              </button>
+              <button
+                className={ageMode === 'age' ? 'on' : ''}
+                disabled={patientLocked}
+                onClick={() => setAgeMode('age')}
+              >
+                Enter age
+              </button>
+            </div>
+          </div>
+
+          {ageMode === 'dob' ? (
+            <div className="grid2">
+              <label>
+                Date of birth
+                <input
+                  type="date"
+                  value={dob}
+                  max={visit}
+                  disabled={patientLocked}
+                  onChange={(e) => setDob(e.target.value)}
+                />
+              </label>
+              <label>
+                Date of visit
+                <input type="date" value={visit} onChange={(e) => setVisit(e.target.value)} />
+              </label>
+            </div>
+          ) : (
+            <div className="grid2">
+              <label>
+                Years
+                <input type="number" min="0" max="20" value={ageYears} onChange={(e) => setAgeYears(e.target.value)} />
+              </label>
+              <label>
+                Months
+                <input type="number" min="0" max="11" value={ageMonthsInput} onChange={(e) => setAgeMonthsInput(e.target.value)} />
+              </label>
+            </div>
+          )}
 
           <div className="age-readout">
             {ageMonths != null && (
@@ -668,33 +840,70 @@ export default function App() {
             )}
             {ageOutOfRange && <span className="warn"> · beyond 20 y (out of chart range)</span>}
           </div>
-        </section>
 
-        <section className="panel records" aria-label="Patient records">
-          <h2>Records</h2>
-
-          {saveError && (
-            <p className="banner-error">
-              ⚠ Records could not be saved to this device (storage full or disabled). Export a backup
-              to avoid losing data.
-            </p>
+          {!selectedPatient ? (
+            <div className="new-patient">
+              <input
+                type="text"
+                placeholder="New patient name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+              />
+              <button className="primary" onClick={createPatient} disabled={!newName.trim() || !dob}>
+                Create record
+              </button>
+              {!dob && <span className="hint">Enter a date of birth above to keep a tracked record.</span>}
+            </div>
+          ) : (
+            <>
+              <div className="record-actions">
+                <button className="primary" onClick={saveVisit} disabled={!canSaveVisit}>
+                  Save visit
+                </button>
+                <button className="danger" onClick={deletePatient}>
+                  Delete patient
+                </button>
+              </div>
+              <table className="visits-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Age</th>
+                    <th>Ht</th>
+                    <th>Wt</th>
+                    <th>Pub.</th>
+                    <th aria-label="delete" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedVisits(selectedPatient).map((v) => {
+                    const am = visitAgeMonths(selectedPatient, v.date);
+                    return (
+                      <tr key={v.id}>
+                        <td>{v.date}</td>
+                        <td>{formatAge(am)}</td>
+                        <td>{v.heightCm ?? '—'}</td>
+                        <td>{v.weightKg ?? '—'}</td>
+                        <td className="pub-cell">{pubertySummary(selectedPatient.sex, v.puberty) || '—'}</td>
+                        <td>
+                          <button className="link" onClick={() => deleteVisit(v.id)} title="Delete visit">
+                            ✕
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {selectedPatient.visits.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="muted">
+                        No visits yet — enter a measurement, then Save visit.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </>
           )}
-
-          <div className="field">
-            <span className="field-label">Patient</span>
-            <select
-              className="select"
-              value={selectedId ?? ''}
-              onChange={(e) => setSelectedId(e.target.value || null)}
-            >
-              <option value="">— Ad-hoc (no record) —</option>
-              {patients.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.sex[0].toUpperCase()}, {p.visits.length}v)
-                </option>
-              ))}
-            </select>
-          </div>
 
           <div className="backup-bar">
             <button onClick={onExportData} disabled={patients.length === 0} title="Download all records as a JSON backup">
@@ -716,68 +925,6 @@ export default function App() {
             />
           </div>
           {importMsg && <p className="hint" role="status">{importMsg}</p>}
-
-          {!selectedPatient ? (
-            <div className="new-patient">
-              <input
-                type="text"
-                placeholder="New patient name"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-              />
-              <button className="primary" onClick={createPatient} disabled={!newName.trim() || !dob}>
-                Create
-              </button>
-              {!dob && <span className="hint">Set a date of birth to create a patient.</span>}
-            </div>
-          ) : (
-            <>
-              <div className="record-actions">
-                <button className="primary" onClick={saveVisit} disabled={!hasMeasurement}>
-                  Save visit
-                </button>
-                <button className="danger" onClick={deletePatient}>
-                  Delete patient
-                </button>
-              </div>
-              <table className="visits-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Age</th>
-                    <th>Ht</th>
-                    <th>Wt</th>
-                    <th aria-label="delete" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedVisits(selectedPatient).map((v) => {
-                    const am = visitAgeMonths(selectedPatient, v.date);
-                    return (
-                      <tr key={v.id}>
-                        <td>{v.date}</td>
-                        <td>{formatAge(am)}</td>
-                        <td>{v.heightCm ?? '—'}</td>
-                        <td>{v.weightKg ?? '—'}</td>
-                        <td>
-                          <button className="link" onClick={() => deleteVisit(v.id)} title="Delete visit">
-                            ✕
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {selectedPatient.visits.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="muted">
-                        No visits yet — enter measurements above and Save visit.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </>
-          )}
         </section>
 
         <section className="panel results" aria-label="Results">
@@ -854,59 +1001,103 @@ export default function App() {
 
         <section className="panel chart-panel" aria-label="Growth chart">
           <div className="chart-head">
-            <h2>Growth chart</h2>
-            <div className="segmented small">
-              {MEASURES.map((m) => (
-                <button
-                  key={m.key}
-                  className={chartMeasure === m.key ? 'on' : ''}
-                  onClick={() => setChartMeasure(m.key)}
-                >
-                  {m.key === 'bmi' ? 'BMI' : m.label.split(' ')[0]}
-                </button>
-              ))}
+            <h2>{showVelocity ? 'Height velocity' : 'Growth chart'}</h2>
+            <div className="chart-toggles">
+              {selectedPatient && (
+                <div className="segmented small">
+                  <button
+                    className={!showVelocity ? 'on' : ''}
+                    onClick={() => setChartView('growth')}
+                  >
+                    Growth
+                  </button>
+                  <button
+                    className={showVelocity ? 'on' : ''}
+                    onClick={() => setChartView('velocity')}
+                  >
+                    Velocity
+                  </button>
+                </div>
+              )}
+              {!showVelocity && (
+                <div className="segmented small">
+                  {MEASURES.map((m) => (
+                    <button
+                      key={m.key}
+                      className={chartMeasure === m.key ? 'on' : ''}
+                      onClick={() => setChartMeasure(m.key)}
+                    >
+                      {m.key === 'bmi' ? 'BMI' : m.label.split(' ')[0]}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <div ref={chartRef}>
-            <GrowthChart
-              title={`${measureMeta.label}-for-age`}
-              unit={measureMeta.unit}
-              xUnit={xUnit}
-              minAge={minAge}
-              maxAge={maxAge}
-              curves={curves}
-              points={chartPoints}
-              band={chartBand}
-              markers={chartMarkers}
-            />
+            {showVelocity ? (
+              <VelocityChart
+                points={velocityPoints}
+                milestones={milestones}
+                menarcheAgeYears={menarcheAgeYears}
+              />
+            ) : (
+              <GrowthChart
+                title={`${measureMeta.label}-for-age`}
+                unit={measureMeta.unit}
+                xUnit={xUnit}
+                minAge={minAge}
+                maxAge={maxAge}
+                curves={curves}
+                points={chartPoints}
+                band={chartBand}
+                markers={chartMarkers}
+              />
+            )}
           </div>
           <div className="chart-foot">
-            <p className="chart-caption">
-              {refSet === 'down'
-                ? 'Down syndrome (Zemel 2015)'
-                : refSet === 'turner'
-                  ? 'Turner syndrome (Isojima 2010)'
-                  : spansBoundary
-                    ? 'WHO → CDC, 0–20 years'
-                    : infantChart
-                      ? 'WHO standards, 0–2 years'
-                      : 'CDC reference, 2–20 years'}{' '}
-              · {sex} ·
-              {selectedPatient ? ` ${chartPoints.length} visit(s)` : ' centile curves 3–97'}
-            </p>
-            {curves.every((c) => c.points.length === 0) && (
-              <p className="note">
-                No reference curve for this measure/sex/age in the selected chart.
-              </p>
-            )}
-            {pointsOutOfWindow > 0 && (
-              <p className="note">
-                {pointsOutOfWindow} visit(s) fall outside this age range and aren't shown on this
-                chart.
-              </p>
+            {showVelocity ? (
+              <>
+                <p className="chart-caption">
+                  {sex} · {velocityPoints.length} interval(s) · milestones from staged visits
+                </p>
+                {alignNote && <p className="note">{alignNote}</p>}
+                {milestones.length === 0 && menarcheAgeYears == null && (
+                  <p className="note">
+                    Stage a few visits (Puberty assessment below) to overlay milestones here.
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="chart-caption">
+                  {refSet === 'down'
+                    ? 'Down syndrome (Zemel 2015)'
+                    : refSet === 'turner'
+                      ? 'Turner syndrome (Isojima 2010)'
+                      : spansBoundary
+                        ? 'WHO → CDC, 0–20 years'
+                        : infantChart
+                          ? 'WHO standards, 0–2 years'
+                          : 'CDC reference, 2–20 years'}{' '}
+                  · {sex} ·
+                  {selectedPatient ? ` ${chartPoints.length} visit(s)` : ' centile curves 3–97'}
+                </p>
+                {curves.every((c) => c.points.length === 0) && (
+                  <p className="note">
+                    No reference curve for this measure/sex/age in the selected chart.
+                  </p>
+                )}
+                {pointsOutOfWindow > 0 && (
+                  <p className="note">
+                    {pointsOutOfWindow} visit(s) fall outside this age range and aren't shown on this
+                    chart.
+                  </p>
+                )}
+              </>
             )}
             <div className="export-bar">
-              <button onClick={onExportPng} disabled={!canExport}>
+              <button onClick={onExportPng} disabled={!canExport && !showVelocity}>
                 PNG
               </button>
               <button onClick={onExportPdf} disabled={!hasResults}>
@@ -917,6 +1108,35 @@ export default function App() {
               </button>
             </div>
           </div>
+        </section>
+
+        <section className="panel puberty" aria-label="Puberty assessment">
+          <div className="chart-head">
+            <h2>Puberty assessment {selectedPatient ? `· ${selectedPatient.name}` : ''}</h2>
+            {chronoAgeYears != null && (
+              <span className="src-chip">chrono {chronoAgeYears.toFixed(1)} y</span>
+            )}
+          </div>
+
+          <PubertyPad sex={sex} value={puberty} onChange={patchPuberty} />
+
+          {pubertyWarnings.length > 0 && (
+            <div className="puberty-warnings" role="status">
+              {pubertyWarnings.map((w, i) => (
+                <div key={i} className={`pwarn ${w.severity}`}>
+                  <span aria-hidden="true">{w.severity === 'warn' ? '⚠' : 'ℹ'}</span> {w.text}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <p className="note">
+            {selectedPatient
+              ? 'Staged fields are saved with the visit (Save visit) and overlaid on the Velocity chart.'
+              : 'Select or create a patient to save this assessment and build a pubertal trajectory.'}{' '}
+            Staging uses Tanner criteria; SPL norms: Feldman &amp; Smith 1975 (verify before clinical
+            use).
+          </p>
         </section>
       </main>
 

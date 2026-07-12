@@ -90,6 +90,22 @@ Current build: all six series monotonic, robust spread ≤0.74%, worst Δ vs pub
 is badged **experimental / not for clinical decisions** in-app pending verification
 against the original paper.
 
+## Puberty assessment norms (in code, not data files)
+
+The puberty module (`src/engine/puberty.ts`) uses published clinical conventions,
+not a bundled dataset:
+
+- **Tanner staging** descriptors (genitalia G1–G5, breast B1–B5, pubic hair PH1–PH5)
+  — standard Marshall & Tanner criteria.
+- **Prader orchidometer** bead volumes: 1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25 mL;
+  ≥ 4 mL marks gonadarche.
+- **Precocious / delayed** age limits: onset before 9 (boys) / 8 (girls) = precocious;
+  absent by 14 (boys) / 13 (girls) = delayed — consensus thresholds.
+- **Stretched penile length** nomogram: mean ± SD by age from **Feldman KW, Smith DW.
+  J Pediatr 1975;86:395–8** (micropenis at < −2.5 SD). These constants are transcribed
+  and should be **verified against the source**; the nomogram is defined for childhood
+  and adult, so no SPL flag is raised during the pubertal years (age ~11–17).
+
 ## Note on the 2-year handoff
 
 Under 2 years WHO measures **recumbent length**; from 2 years CDC measures

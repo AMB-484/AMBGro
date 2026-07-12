@@ -2,11 +2,13 @@
 // point(s). No charting library — full control and fully offline-capable.
 
 import type { ReferenceCurve } from '../engine';
+import { niceTicks } from './chartUtils';
 
 export interface PlottedPoint {
   age: number; // months
   value: number;
   label?: string;
+  preview?: boolean; // live, not-yet-saved entry — drawn as a hollow marker
 }
 
 export interface TargetBand {
@@ -56,6 +58,7 @@ text { font-family: system-ui, 'Segoe UI', Roboto, sans-serif; }
 .centile-label { fill: #6b6375; font-size: 10px; dominant-baseline: middle; }
 .patient-line { fill: none; stroke: #2563eb; stroke-width: 2; }
 .patient-point { fill: #2563eb; stroke: #ffffff; stroke-width: 1.5; }
+.patient-preview { fill: #ffffff; stroke: #2563eb; stroke-width: 2; }
 .chart-title { fill: #0f1222; font-size: 14px; font-weight: 600; }
 .target-band { fill: rgba(22, 163, 74, 0.10); }
 .target-line { stroke: #16a34a; stroke-width: 1; stroke-dasharray: 4 3; }
@@ -63,18 +66,6 @@ text { font-family: system-ui, 'Segoe UI', Roboto, sans-serif; }
 .bone-marker { fill: #ffffff; stroke: #a855f7; stroke-width: 2; }
 .bone-label { fill: #7e22ce; font-size: 10px; font-weight: 600; }
 `;
-
-function niceTicks(min: number, max: number, target = 7): number[] {
-  const span = max - min || 1;
-  const raw = span / target;
-  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-  const norm = raw / mag;
-  const step = (norm >= 5 ? 5 : norm >= 2 ? 2 : 1) * mag;
-  const start = Math.ceil(min / step) * step;
-  const ticks: number[] = [];
-  for (let v = start; v <= max + 1e-9; v += step) ticks.push(Math.round(v * 1000) / 1000);
-  return ticks;
-}
 
 export function GrowthChart({
   title,
@@ -218,9 +209,15 @@ export function GrowthChart({
           />
         )}
 
-        {/* patient points */}
+        {/* patient points (hollow marker for the live, unsaved entry) */}
         {visiblePoints.map((p, i) => (
-          <circle key={i} cx={xScale(p.age)} cy={yScale(p.value)} r={5} className="patient-point" />
+          <circle
+            key={i}
+            cx={xScale(p.age)}
+            cy={yScale(p.value)}
+            r={p.preview ? 5.5 : 5}
+            className={p.preview ? 'patient-preview' : 'patient-point'}
+          />
         ))}
 
         {/* extra markers, e.g. height plotted at bone age (open diamond) */}

@@ -2,13 +2,15 @@
 // a single JSON blob under one key. Sufficient for a single-clinician device;
 // can migrate to IndexedDB later without changing the UI contract.
 
-import type { RefSet, Sex } from '../engine';
+import type { PubertyAssessment, RefSet, Sex } from '../engine';
 
 export interface Visit {
   id: string;
   date: string; // yyyy-mm-dd (measurement date)
   heightCm: number | null;
   weightKg: number | null;
+  /** Optional pubertal assessment captured at the same visit. */
+  puberty?: PubertyAssessment;
 }
 
 export interface Patient {

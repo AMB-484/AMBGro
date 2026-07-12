@@ -70,8 +70,59 @@ function renderChartCanvas(svg: SVGSVGElement, scale = 2): Promise<HTMLCanvasEle
   });
 }
 
-export async function exportChartPng(svg: SVGSVGElement, filename: string) {
-  const canvas = await renderChartCanvas(svg, 2.5);
+export interface ExportHeader {
+  title: string; // e.g. "AMBGro"
+  byline: string; // e.g. "by Dr. Awais Muhammad Butt"
+  subtitle?: string; // chart context, e.g. "Height-for-age · CDC · male · Jane Doe"
+}
+
+/** Return a new canvas: `header` band drawn above the chart on a white strip. */
+function composeWithHeader(
+  chart: HTMLCanvasElement,
+  header: ExportHeader,
+  scale: number,
+): HTMLCanvasElement {
+  const padX = 16 * scale;
+  const headerH = (header.subtitle ? 60 : 44) * scale;
+  const out = document.createElement('canvas');
+  out.width = chart.width;
+  out.height = chart.height + headerH;
+  const ctx = out.getContext('2d');
+  if (!ctx) return chart;
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, out.width, out.height);
+
+  const titleY = 26 * scale;
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#0f1222';
+  ctx.font = `700 ${20 * scale}px system-ui, 'Segoe UI', Roboto, sans-serif`;
+  ctx.fillText(header.title, padX, titleY);
+  const titleW = ctx.measureText(header.title).width;
+
+  ctx.fillStyle = '#6b6375';
+  ctx.font = `${12 * scale}px system-ui, 'Segoe UI', Roboto, sans-serif`;
+  ctx.fillText(header.byline, padX + titleW + 8 * scale, titleY);
+
+  if (header.subtitle) {
+    ctx.fillText(header.subtitle, padX, titleY + 18 * scale);
+  }
+
+  ctx.strokeStyle = '#e2e4ee';
+  ctx.lineWidth = Math.max(1, scale);
+  ctx.beginPath();
+  ctx.moveTo(0, headerH - scale);
+  ctx.lineTo(out.width, headerH - scale);
+  ctx.stroke();
+
+  ctx.drawImage(chart, 0, headerH);
+  return out;
+}
+
+export async function exportChartPng(svg: SVGSVGElement, filename: string, header?: ExportHeader) {
+  const scale = 2.5;
+  const chart = await renderChartCanvas(svg, scale);
+  const canvas = header ? composeWithHeader(chart, header, scale) : chart;
   await new Promise<void>((resolve) =>
     canvas.toBlob((blob) => {
       if (blob) download(blob, filename);
@@ -152,9 +203,11 @@ export async function exportReportPdf(svg: SVGSVGElement, meta: ReportMeta, file
   doc.setFontSize(8);
   doc.setTextColor(140);
   doc.text(
-    'Clinical decision support for qualified clinicians. Not a substitute for clinical judgement.',
+    `Generated with ${meta.appName} by ${meta.developer}. Clinical decision support for qualified` +
+      ' clinicians — not a substitute for clinical judgement.',
     margin,
     doc.internal.pageSize.getHeight() - 30,
+    { maxWidth: pageW - margin * 2 },
   );
 
   doc.save(filename);

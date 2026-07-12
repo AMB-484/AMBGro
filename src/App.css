@@ -34,18 +34,19 @@
   display: grid;
   grid-template-columns: 340px 1fr;
   grid-template-areas:
+    'patient chart'
     'inputs chart'
-    'records chart'
-    'results chart';
+    'results chart'
+    'puberty puberty';
   gap: 16px;
   margin-top: 16px;
   flex: 1;
 }
+.patient {
+  grid-area: patient;
+}
 .inputs {
   grid-area: inputs;
-}
-.records {
-  grid-area: records;
 }
 .results {
   grid-area: results;
@@ -54,15 +55,19 @@
   grid-area: chart;
   align-self: start;
 }
+.puberty {
+  grid-area: puberty;
+}
 
 @media (max-width: 900px) {
   .layout {
     grid-template-columns: 1fr;
     grid-template-areas:
+      'patient'
       'inputs'
-      'records'
       'chart'
-      'results';
+      'results'
+      'puberty';
   }
 }
 
@@ -423,7 +428,14 @@ button.link:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   margin-bottom: 8px;
+}
+.chart-toggles {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .chart {
@@ -474,6 +486,214 @@ button.link:hover {
 
 /* SVG chart paint styles are embedded inside the SVG (GrowthChart.tsx) so exports
    render correctly; only layout for the chart wrapper lives here. */
+
+/* ---- puberty assessment pad ---- */
+.pub-cell {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.puberty-pad {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.tanner-block {
+  display: grid;
+  gap: 6px;
+  min-width: 0; /* allow the scroll rows below to shrink instead of widening the grid */
+}
+.tanner-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  min-width: 0;
+  -webkit-overflow-scrolling: touch;
+}
+.tanner-card {
+  flex: 1 0 108px;
+  min-width: 108px;
+  display: grid;
+  gap: 5px;
+  justify-items: start;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 9px;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+}
+.tanner-card:hover {
+  border-color: var(--accent-border);
+}
+.tanner-card.on {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.card-badge {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-h);
+}
+.tanner-card.on .card-badge {
+  color: var(--accent);
+}
+.card-caption {
+  font-size: 10.5px;
+  line-height: 1.25;
+  color: var(--text-muted);
+}
+.ramp {
+  width: 100%;
+  height: 8px;
+}
+.ramp-track {
+  fill: var(--grid);
+}
+.ramp-fill {
+  fill: var(--accent);
+}
+
+/* orchidometer */
+.orchid-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.link-toggle {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.link-toggle.on {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+}
+.orchid-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.orchid-side {
+  width: 16px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  flex: none;
+}
+.beads {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 4px 0;
+  min-width: 0; /* let the row scroll instead of forcing the page wider */
+  -webkit-overflow-scrolling: touch;
+}
+.bead {
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.bead.pubertal {
+  border-color: #9ad4ab;
+}
+.bead.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.bead:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* switch toggle */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-h);
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.switch-track {
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--border);
+  padding: 2px;
+  transition: background 0.15s;
+  flex: none;
+}
+.switch-thumb {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s;
+}
+.switch.on .switch-track {
+  background: var(--accent);
+}
+.switch.on .switch-thumb {
+  transform: translateX(16px);
+}
+.menarche-date,
+.spl-field {
+  margin-top: 8px;
+  max-width: 220px;
+}
+
+/* passive warnings */
+.puberty-warnings {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+.pwarn {
+  font-size: 12.5px;
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+.pwarn.warn {
+  color: #92400e;
+  background: #fff7ed;
+  border: 1px solid #f4c37a;
+}
+.pwarn.info {
+  color: var(--text);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+}
 
 .app-footer {
   margin-top: 18px;
