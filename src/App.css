@@ -148,6 +148,33 @@
   display: grid;
   gap: 4px;
 }
+.tool-readout + .tool-readout {
+  margin-top: 8px;
+}
+/* experimental (Bayley–Pinneau) readout — amber to signal caution */
+.tool-readout.experimental {
+  background: #fff8ed;
+  border-color: #f4c37a;
+}
+.exp-badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: #9a5b00;
+  text-transform: uppercase;
+}
+.exp-detail {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.tool-readout .ok {
+  color: #15803d;
+  font-weight: 600;
+}
+.tool-readout .warn {
+  color: var(--warn);
+  font-weight: 600;
+}
 .velocity {
   margin-top: 10px;
   font-size: 13px;

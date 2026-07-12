@@ -10,11 +10,12 @@ import {
   heightVelocity,
   correctedAgeMonths,
   interpret,
+  predictAdultHeight,
   TERM_WEEKS,
   BOUNDARY_MONTHS,
   MAX_AGE_MONTHS,
 } from './engine';
-import type { Assessment, Measure, RefSet, Sex, Velocity } from './engine';
+import type { Assessment, Maturity, Measure, RefSet, Sex, Velocity } from './engine';
 import { GrowthChart } from './components/GrowthChart';
 import type { PlottedPoint, TargetBand, ChartMarker } from './components/GrowthChart';
 import { exportChartPng, exportReportPdf, exportCsv } from './export/chartExport';
@@ -59,6 +60,12 @@ function valueForMeasure(measure: Measure, h: number | null, w: number | null): 
   if (measure === 'weight') return w;
   return h && w ? bmiFrom(w, h) : null;
 }
+
+const MATURITY_LABEL: Record<Maturity, string> = {
+  average: 'average',
+  accelerated: 'accelerated (advanced)',
+  delayed: 'delayed (retarded)',
+};
 
 /**
  * Effective (assessed/plotted) age of a saved visit: corrected for prematurity
@@ -235,6 +242,17 @@ export default function App() {
   const boneAgeYears = num(boneAge);
   const boneMarker =
     boneAgeYears && heightCm ? { age: boneAgeYears * 12, value: heightCm, label: 'BA' } : null;
+
+  // EXPERIMENTAL: Bayley-Pinneau adult-height prediction (hand-transcribed tables).
+  const hasBoneAgeInputs = boneAgeYears != null && heightCm != null && ageMonths != null;
+  const adultPrediction =
+    hasBoneAgeInputs && boneAgeYears && heightCm && ageMonths != null
+      ? predictAdultHeight(sex, heightCm, ageMonths / 12, boneAgeYears)
+      : null;
+  const predictionInTarget =
+    adultPrediction && target
+      ? adultPrediction.predictedCm >= target.low && adultPrediction.predictedCm <= target.high
+      : null;
 
   // height velocity between consecutive visits of the selected patient
   const velocities = useMemo<Velocity[]>(() => {
@@ -598,6 +616,35 @@ export default function App() {
                 </div>
               )}
             </div>
+          )}
+
+          {adultPrediction && (
+            <div className="tool-readout experimental">
+              <div className="exp-badge">⚠ Experimental — not for clinical decisions</div>
+              <div>
+                Predicted adult height (Bayley–Pinneau):{' '}
+                <strong>{adultPrediction.predictedCm.toFixed(1)} cm</strong> (
+                {(adultPrediction.predictedCm / 2.54).toFixed(1)} in)
+                {predictionInTarget != null && (
+                  <span className={predictionInTarget ? 'ok' : 'warn'}>
+                    {' '}
+                    · {predictionInTarget ? 'within' : 'outside'} target
+                  </span>
+                )}
+              </div>
+              <div className="exp-detail">
+                {MATURITY_LABEL[adultPrediction.maturity]} skeletal maturity ·{' '}
+                {adultPrediction.pct.toFixed(1)}% of adult height attained at bone age{' '}
+                {adultPrediction.skeletalAgeYears.toFixed(1)} y. Tables hand-transcribed &amp;
+                unvalidated.
+              </div>
+            </div>
+          )}
+          {hasBoneAgeInputs && !adultPrediction && (
+            <p className="hint">
+              Bayley–Pinneau: bone age {boneAgeYears?.toFixed(1)} y is outside the tabulated range
+              for this maturity category.
+            </p>
           )}
 
           <div className="age-readout">

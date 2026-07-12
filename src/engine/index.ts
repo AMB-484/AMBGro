@@ -36,3 +36,5 @@ export { midParentalHeight, heightVelocity, correctedAgeMonths, TERM_WEEKS } fro
 export type { TargetHeight, Velocity } from './clinical';
 export { interpret } from './interpret';
 export type { Interpretation, Tone } from './interpret';
+export { predictAdultHeight, bayleyPinneauMeta } from './bayleyPinneau';
+export type { AdultHeightPrediction, Maturity } from './bayleyPinneau';

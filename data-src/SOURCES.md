@@ -70,6 +70,26 @@ i.e. LMS with **L = 1, M = mean, S = SD/mean**. Girls only, height only, ages 1�
 Final height ≈139.5 cm at 18y (matches known Turner adult height). Selected via the
 "Turner syndrome" reference toggle.
 
+## Bayley–Pinneau (EXPERIMENTAL) — `bayley-pinneau/*.csv`
+
+Tables for predicting adult height from current height + skeletal (bone) age, one
+CSV per sex × skeletal-maturity category (`{boys,girls}_{normal,advanced,delayed}`).
+Downloaded from the **RCPCH growth-references** repository
+(https://github.com/rcpch/growth-references, MIT-licensed). Original method:
+Bayley N, Pinneau SR. J Pediatr 1952;40:423–41.
+
+**Caveat — unvalidated.** The RCPCH README states this data was *"transcribed from
+the paper by hand and is not tested."* Rather than trust the single published
+"% of Mature Height" row, `scripts/build-bayley-pinneau.mjs` derives the percentage
+from every body cell (`% = 100 × currentHeight ÷ predictedHeight`) and takes the
+**median per skeletal-age column**, so a lone mistyped cell is one outlier among
+~15–25 and cannot move the value. It also prints a transcription-quality report
+(outlier-cell count, within-column spread, median-vs-published Δ, monotonicity).
+Current build: all six series monotonic, robust spread ≤0.74%, worst Δ vs published
+1.55% (near skeletal maturity, where predicted height is insensitive). The feature
+is badged **experimental / not for clinical decisions** in-app pending verification
+against the original paper.
+
 ## Note on the 2-year handoff
 
 Under 2 years WHO measures **recumbent length**; from 2 years CDC measures

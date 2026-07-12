@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "data": "node scripts/build-references.mjs",
+    "data:bp": "node scripts/build-bayley-pinneau.mjs",
     "validate": "node scripts/validate.mjs"
   },
   "dependencies": {

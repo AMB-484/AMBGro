@@ -28,7 +28,12 @@ a substitute for clinical judgement.
   it back (merge by record), so records survive a cache clear or device change.
 - **Endocrine tools**: mid-parental (target) height (Tanner, ±10 cm) as a chart band;
   height velocity between visits; bone age plotted on the height chart.
-- **Down syndrome** reference charts (Zemel 2015), toggled against the standard.
+- **Adult-height prediction (Bayley–Pinneau, EXPERIMENTAL)**: predicts adult height
+  from current height + skeletal (bone) age, auto-selecting the skeletal-maturity
+  category, and compares it to the parental target. Clearly badged *not for clinical
+  decisions* — the tables are hand-transcribed and unvalidated (see Data & validation).
+- **Down syndrome** (Zemel 2015) and **Turner syndrome** (Isojima 2010, height-only,
+  girls) reference charts, toggled against the standard WHO/CDC set.
 - **Prematurity**: corrected age from gestational age, applied to ≤24 months — for
   both ad-hoc entries and saved longitudinal records.
 - **Installable PWA** — works fully offline; can be added to an Android home screen,
@@ -37,10 +42,10 @@ a substitute for clinical judgement.
 
 ### Deferred / not yet built
 
-- **Turner syndrome** charts — population-specific; awaiting a clinician-chosen,
-  verified reference (the reference-set framework already supports adding it).
-- **Bayley–Pinneau** numeric adult-height prediction — its 1952 tables are not
-  available in verified machine-readable form; bone-age *visualisation* is done.
+- **Bayley–Pinneau validation** — the prediction feature ships as *experimental*
+  because its tables were transcribed by hand (RCPCH source) and have not been
+  checked against the original 1952 paper. Needs clinician verification before the
+  experimental badge can be removed.
 - **Fenton / INTERGROWTH-21st** preterm *chart* plotting (corrected-age on WHO is done).
 
 ## Tech
@@ -114,5 +119,12 @@ percentile measurements and compared against CDC's own published percentile
 columns — the build **fails** if they disagree beyond 5e-4 relative error
 (current max ≈ 1e-9). `npm run validate` adds independent anchors, including
 WHO's published +2 SD birth values.
+
+The **experimental Bayley–Pinneau** tables are built separately by
+`npm run data:bp` (`scripts/build-bayley-pinneau.mjs`), which derives the
+percentage-of-mature-height from the table body (median per skeletal-age column, so
+single hand-transcription typos are outvoted) and prints a transcription-quality
+report. The numbers are **not yet validated against the original paper**, so the
+feature is badged *experimental / not for clinical decisions* in-app.
 
 See [data-src/SOURCES.md](data-src/SOURCES.md) for exact sources and licensing.
