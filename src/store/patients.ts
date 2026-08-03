@@ -20,6 +20,14 @@ export interface Patient {
   dob: string; // yyyy-mm-dd — required for longitudinal age
   /** Gestational age at birth (weeks); enables corrected-age plotting for preterms. */
   gestWeeks?: number | null;
+  /**
+   * Parent heights (cm) for the mid-parental (target) height. Persisted on the
+   * patient — not the visit — since they don't change between visits; kept editable
+   * so an entry error can be corrected at a follow-up. Drives the target band on
+   * every chart without re-entry.
+   */
+  fatherHeightCm?: number | null;
+  motherHeightCm?: number | null;
   /** Reference population this patient is charted against (standard / down / turner). */
   refSet?: RefSet;
   visits: Visit[];

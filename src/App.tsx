@@ -183,6 +183,9 @@ export default function App() {
       setAgeMode('dob');
       setVisit(today);
       if (selectedPatient.gestWeeks != null) setGestAge(String(selectedPatient.gestWeeks));
+      // parent heights persist on the record so the target band shows on every visit
+      if (selectedPatient.fatherHeightCm != null) setFatherH(String(selectedPatient.fatherHeightCm));
+      if (selectedPatient.motherHeightCm != null) setMotherH(String(selectedPatient.motherHeightCm));
       setRefSet(selectedPatient.refSet ?? 'standard');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -439,12 +442,31 @@ export default function App() {
       sex,
       dob,
       gestWeeks: gestWeeks ?? null,
+      fatherHeightCm: fatherCm ?? null,
+      motherHeightCm: motherCm ?? null,
       refSet,
       visits: [],
     };
     setPatients((prev) => [...prev, p]);
     setSelectedId(p.id);
     setNewName('');
+  };
+
+  // Persist parent heights back to the selected record (on blur). Parent height
+  // doesn't change between visits, so it's stored once; editing here corrects an
+  // earlier entry error. No-ops when the values already match what's saved.
+  const persistParentHeights = () => {
+    if (!selectedPatient) return;
+    const f = fatherCm ?? null;
+    const m = motherCm ?? null;
+    if ((selectedPatient.fatherHeightCm ?? null) === f && (selectedPatient.motherHeightCm ?? null) === m) {
+      return;
+    }
+    setPatients((prev) =>
+      prev.map((p) =>
+        p.id === selectedPatient.id ? { ...p, fatherHeightCm: f, motherHeightCm: m } : p,
+      ),
+    );
   };
 
   const saveVisit = () => {
@@ -661,11 +683,23 @@ export default function App() {
           <div className="grid3">
             <label>
               Father (cm)
-              <input type="number" step="0.1" value={fatherH} onChange={(e) => setFatherH(e.target.value)} />
+              <input
+                type="number"
+                step="0.1"
+                value={fatherH}
+                onChange={(e) => setFatherH(e.target.value)}
+                onBlur={persistParentHeights}
+              />
             </label>
             <label>
               Mother (cm)
-              <input type="number" step="0.1" value={motherH} onChange={(e) => setMotherH(e.target.value)} />
+              <input
+                type="number"
+                step="0.1"
+                value={motherH}
+                onChange={(e) => setMotherH(e.target.value)}
+                onBlur={persistParentHeights}
+              />
             </label>
             <label>
               Bone age (y)
@@ -680,6 +714,9 @@ export default function App() {
                   Target height (MPH):{' '}
                   <strong>{target.mph.toFixed(1)} cm</strong> ({target.low.toFixed(0)}–
                   {target.high.toFixed(0)})
+                  {selectedPatient && (
+                    <span className="hint"> · saved with record; edit to correct</span>
+                  )}
                 </div>
               )}
               {boneAgeYears != null && ageMonths != null && (
