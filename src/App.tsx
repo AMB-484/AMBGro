@@ -134,7 +134,10 @@ export default function App() {
   const [chartMeasure, setChartMeasure] = useState<Measure>('height');
   const [chartView, setChartView] = useState<'growth' | 'velocity'>('growth');
   const [puberty, setPuberty] = useState<PubertyAssessment>({});
+  // id of the saved visit currently being edited (null = entering a new visit)
+  const [editingVisitId, setEditingVisitId] = useState<string | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
+  const measurementRef = useRef<HTMLDivElement>(null);
 
   const patchPuberty = (patch: Partial<PubertyAssessment>) =>
     setPuberty((prev) => {
@@ -176,6 +179,7 @@ export default function App() {
     setMotherH('');
     setGestAge('');
     setPuberty({});
+    setEditingVisitId(null);
     setChartView('growth');
     if (selectedPatient) {
       setSex(selectedPatient.sex);
@@ -469,19 +473,57 @@ export default function App() {
     );
   };
 
+  // Save a new visit, or — when editingVisitId is set — replace that visit in place.
+  // Reusing the id keeps the visit's identity so an accidental save or wrong entry
+  // can be corrected rather than duplicated.
   const saveVisit = () => {
     if (!selectedPatient || !canSaveVisit) return;
-    const v: (typeof selectedPatient.visits)[number] = {
-      id: uid(),
+    const v: Visit = {
+      id: editingVisitId ?? uid(),
       date: visit,
       heightCm,
       weightKg,
       ...(hasPubertyData(puberty) ? { puberty: { ...puberty } } : {}),
     };
     setPatients((prev) =>
-      prev.map((p) => (p.id === selectedPatient.id ? { ...p, visits: [...p.visits, v] } : p)),
+      prev.map((p) => {
+        if (p.id !== selectedPatient.id) return p;
+        const visits = editingVisitId
+          ? p.visits.map((old) => (old.id === editingVisitId ? v : old))
+          : [...p.visits, v];
+        return { ...p, visits };
+      }),
     );
+    if (editingVisitId) {
+      // leaving edit mode: clear the form so the next entry starts clean
+      setEditingVisitId(null);
+      setHeight('');
+      setWeight('');
+      setVisit(today);
+    }
     setPuberty({}); // fresh pad for the next visit
+  };
+
+  // Load a saved visit back into the entry form for correction. The Save button
+  // becomes "Update visit" and re-saves onto the same record.
+  const editVisit = (visitId: string) => {
+    if (!selectedPatient) return;
+    const v = selectedPatient.visits.find((x) => x.id === visitId);
+    if (!v) return;
+    setVisit(v.date);
+    setHeight(v.heightCm != null ? String(v.heightCm) : '');
+    setWeight(v.weightKg != null ? String(v.weightKg) : '');
+    setPuberty(v.puberty ? { ...v.puberty } : {});
+    setEditingVisitId(visitId);
+    measurementRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const cancelEdit = () => {
+    setEditingVisitId(null);
+    setHeight('');
+    setWeight('');
+    setPuberty({});
+    setVisit(today);
   };
 
   const deleteVisit = (visitId: string) => {
@@ -638,7 +680,7 @@ export default function App() {
       </header>
 
       <main className="layout">
-        <section className="panel inputs" aria-label="Measurement">
+        <section className="panel inputs" aria-label="Measurement" ref={measurementRef}>
           <h2>Measurement</h2>
 
           <div className="field">
@@ -757,6 +799,26 @@ export default function App() {
               Bayley–Pinneau: bone age {boneAgeYears?.toFixed(1)} y is outside the tabulated range
               for this maturity category.
             </p>
+          )}
+
+          {selectedPatient && (
+            <div className="save-visit-bar">
+              {editingVisitId && (
+                <span className="editing-note">
+                  ✎ Editing the {visit} visit — Update replaces it.
+                </span>
+              )}
+              <div className="save-visit-buttons">
+                <button className="primary" onClick={saveVisit} disabled={!canSaveVisit}>
+                  {editingVisitId ? 'Update visit' : 'Save visit'}
+                </button>
+                {editingVisitId && (
+                  <button className="danger" onClick={cancelEdit}>
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </div>
           )}
         </section>
 
@@ -893,14 +955,10 @@ export default function App() {
             </div>
           ) : (
             <>
-              <div className="record-actions">
-                <button className="primary" onClick={saveVisit} disabled={!canSaveVisit}>
-                  Save visit
-                </button>
-                <button className="danger" onClick={deletePatient}>
-                  Delete patient
-                </button>
-              </div>
+              <p className="hint" style={{ marginBottom: 8 }}>
+                Enter measurements in the panel below, then <strong>Save visit</strong> at its foot.
+                Use ✎ to correct a saved visit.
+              </p>
               <table className="visits-table">
                 <thead>
                   <tr>
@@ -909,20 +967,23 @@ export default function App() {
                     <th>Ht</th>
                     <th>Wt</th>
                     <th>Pub.</th>
-                    <th aria-label="delete" />
+                    <th aria-label="edit / delete" />
                   </tr>
                 </thead>
                 <tbody>
                   {sortedVisits(selectedPatient).map((v) => {
                     const am = visitAgeMonths(selectedPatient, v.date);
                     return (
-                      <tr key={v.id}>
+                      <tr key={v.id} className={v.id === editingVisitId ? 'editing' : undefined}>
                         <td>{v.date}</td>
                         <td>{formatAge(am)}</td>
                         <td>{v.heightCm ?? '—'}</td>
                         <td>{v.weightKg ?? '—'}</td>
                         <td className="pub-cell">{pubertySummary(selectedPatient.sex, v.puberty) || '—'}</td>
-                        <td>
+                        <td className="visit-actions">
+                          <button className="link" onClick={() => editVisit(v.id)} title="Edit visit">
+                            ✎
+                          </button>
                           <button className="link" onClick={() => deleteVisit(v.id)} title="Delete visit">
                             ✕
                           </button>
@@ -933,12 +994,17 @@ export default function App() {
                   {selectedPatient.visits.length === 0 && (
                     <tr>
                       <td colSpan={6} className="muted">
-                        No visits yet — enter a measurement, then Save visit.
+                        No visits yet — enter a measurement, then Save visit below.
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
+              <div className="record-actions">
+                <button className="danger" onClick={deletePatient}>
+                  Delete patient
+                </button>
+              </div>
             </>
           )}
 

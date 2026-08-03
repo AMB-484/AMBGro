@@ -244,7 +244,38 @@ input:disabled {
 .record-actions {
   display: flex;
   gap: 8px;
+  margin-top: 10px;
   margin-bottom: 10px;
+}
+
+/* Save/Update action bar at the foot of the Measurement panel — placed after all
+   the anthropometric inputs so it sits at the end of the data-entry flow. */
+.save-visit-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.save-visit-buttons {
+  display: flex;
+  gap: 8px;
+}
+.save-visit-buttons .primary {
+  flex: 1;
+}
+.editing-note {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.visit-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+.visits-table tr.editing td {
+  background: var(--accent-bg);
 }
 button.primary {
   font: inherit;
