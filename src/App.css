@@ -62,12 +62,14 @@
 @media (max-width: 900px) {
   .layout {
     grid-template-columns: 1fr;
+    /* data entry flows top-to-bottom (patient → measurements → puberty → Save),
+       then the review outputs (chart, results) follow */
     grid-template-areas:
       'patient'
       'inputs'
+      'puberty'
       'chart'
-      'results'
-      'puberty';
+      'results';
   }
 }
 
@@ -490,9 +492,30 @@ button.link:hover {
   margin-top: 8px;
   flex-wrap: wrap;
 }
+/* Off-screen scaffold that renders the report charts for rasterisation. Kept in the
+   DOM (not display:none, which would give SVGs zero size) but moved out of view. */
+.report-charts {
+  position: absolute;
+  left: -100000px;
+  top: 0;
+  width: 900px;
+  pointer-events: none;
+}
+
 .export-bar {
   display: inline-flex;
   gap: 6px;
+  flex-wrap: wrap;
+}
+.export-bar .report-btn {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.export-bar .report-btn:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(0.94);
+  color: #fff;
 }
 .export-bar button {
   font: inherit;

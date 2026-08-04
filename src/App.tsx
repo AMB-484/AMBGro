@@ -34,8 +34,14 @@ import type { PlottedPoint, TargetBand, ChartMarker } from './components/GrowthC
 import { PubertyPad } from './components/PubertyPad';
 import { VelocityChart } from './components/VelocityChart';
 import type { VelocityPoint, Milestone } from './components/VelocityChart';
-import { exportChartPng, exportReportPdf, exportCsv } from './export/chartExport';
-import type { CsvVisit, ReportMeta } from './export/chartExport';
+import { exportChartPng, exportGrowthReportPdf, exportCsv } from './export/chartExport';
+import type {
+  CsvVisit,
+  GrowthReport,
+  ReportChartSvgs,
+  ReportPubertyRow,
+  ReportVisitColumn,
+} from './export/chartExport';
 import {
   loadPatients,
   savePatients,
@@ -117,6 +123,44 @@ function visitAgeMonths(p: Patient, date: string): number {
   return chrono;
 }
 
+// ---- report helpers ----
+
+/** Sex-specific puberty rows for the report table, in display order. */
+const MALE_PUBERTY_ROWS: ReportPubertyRow[] = [
+  { key: 'genitalia', label: 'Tanner genitalia' },
+  { key: 'pubicHair', label: 'Tanner pubic hair' },
+  { key: 'testis', label: 'Testicular volume (mL)' },
+];
+const FEMALE_PUBERTY_ROWS: ReportPubertyRow[] = [
+  { key: 'breast', label: 'Tanner breast' },
+  { key: 'pubicHair', label: 'Tanner pubic hair' },
+  { key: 'menarche', label: 'Menarche' },
+];
+
+/** Compact per-visit puberty values keyed to the report rows above. */
+function pubertyReportCells(sex: Sex, p?: PubertyAssessment): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!p) return out;
+  if (sex === 'male') {
+    if (p.tannerGenitalia) out.genitalia = `G${p.tannerGenitalia}`;
+    const tv = maxTesticularVol(p);
+    if (tv != null) out.testis = String(tv);
+  } else {
+    if (p.tannerBreast) out.breast = `B${p.tannerBreast}`;
+    if (p.menarcheAchieved) out.menarche = p.menarcheDate ?? 'Yes';
+  }
+  if (p.tannerPubicHair) out.pubicHair = `PH${p.tannerPubicHair}`;
+  return out;
+}
+
+function referenceLabel(refSet: RefSet): string {
+  return refSet === 'down'
+    ? 'Down syndrome (Zemel 2015)'
+    : refSet === 'turner'
+      ? 'Turner syndrome (Isojima 2010)'
+      : 'WHO (0–2 y) / CDC (2–20 y)';
+}
+
 export default function App() {
   const [sex, setSex] = useState<Sex>('male');
   const [ageMode, setAgeMode] = useState<'dob' | 'age'>('dob');
@@ -128,6 +172,8 @@ export default function App() {
   const [weight, setWeight] = useState('');
   const [fatherH, setFatherH] = useState('');
   const [motherH, setMotherH] = useState('');
+  const [guardianName, setGuardianName] = useState('');
+  const [mrn, setMrn] = useState('');
   const [boneAge, setBoneAge] = useState('');
   const [gestAge, setGestAge] = useState('');
   const [refSet, setRefSet] = useState<RefSet>('standard');
@@ -138,6 +184,7 @@ export default function App() {
   const [editingVisitId, setEditingVisitId] = useState<string | null>(null);
   const chartRef = useRef<HTMLDivElement>(null);
   const measurementRef = useRef<HTMLDivElement>(null);
+  const reportChartsRef = useRef<HTMLDivElement>(null);
 
   const patchPuberty = (patch: Partial<PubertyAssessment>) =>
     setPuberty((prev) => {
@@ -177,6 +224,8 @@ export default function App() {
     setBoneAge('');
     setFatherH('');
     setMotherH('');
+    setGuardianName('');
+    setMrn('');
     setGestAge('');
     setPuberty({});
     setEditingVisitId(null);
@@ -190,6 +239,8 @@ export default function App() {
       // parent heights persist on the record so the target band shows on every visit
       if (selectedPatient.fatherHeightCm != null) setFatherH(String(selectedPatient.fatherHeightCm));
       if (selectedPatient.motherHeightCm != null) setMotherH(String(selectedPatient.motherHeightCm));
+      if (selectedPatient.guardianName) setGuardianName(selectedPatient.guardianName);
+      if (selectedPatient.mrn) setMrn(selectedPatient.mrn);
       setRefSet(selectedPatient.refSet ?? 'standard');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -424,6 +475,106 @@ export default function App() {
   const chartMarkers: ChartMarker[] | undefined =
     heightChart && boneMarker ? [boneMarker] : undefined;
 
+  // ---- report: saved-visit charts (all measures) + data model ----
+  // Age window spanning the patient's saved visits, chosen the same way as the live
+  // chart (infant / child / continuous), used for every report chart so they align.
+  const reportVisitList = selectedPatient ? sortedVisits(selectedPatient) : [];
+  const reportAges = reportVisitList.map((v) => visitAgeMonths(selectedPatient!, v.date));
+  const rSpans =
+    reportAges.some((a) => a < BOUNDARY_MONTHS) && reportAges.some((a) => a >= BOUNDARY_MONTHS);
+  const rPeak = reportAges.length ? Math.max(...reportAges) : 0;
+  const rInfant = !rSpans && reportAges.length > 0 && rPeak < BOUNDARY_MONTHS;
+  let rMinAge: number;
+  let rMaxAge: number;
+  let rXUnit: 'months' | 'years';
+  if (rSpans) {
+    rMinAge = 0;
+    rMaxAge = Math.min(MAX_AGE_MONTHS, Math.max(36, Math.ceil(rPeak / 12) * 12));
+    rXUnit = 'years';
+  } else if (rInfant) {
+    [rMinAge, rMaxAge] = [0, BOUNDARY_MONTHS];
+    rXUnit = 'months';
+  } else {
+    [rMinAge, rMaxAge] = [BOUNDARY_MONTHS, MAX_AGE_MONTHS];
+    rXUnit = 'years';
+  }
+
+  const reportCurves = useMemo(
+    () => ({
+      height: referenceCurves('height', sex, rMinAge, rMaxAge, undefined, refSet),
+      weight: referenceCurves('weight', sex, rMinAge, rMaxAge, undefined, refSet),
+      bmi: referenceCurves('bmi', sex, rMinAge, rMaxAge, undefined, refSet),
+    }),
+    [sex, rMinAge, rMaxAge, refSet],
+  );
+  const reportPointsFor = (measure: Measure): PlottedPoint[] =>
+    reportVisitList
+      .map((v) => {
+        const am = visitAgeMonths(selectedPatient!, v.date);
+        const val = valueForMeasure(measure, v.heightCm, v.weightKg);
+        return val != null && am >= rMinAge && am <= rMaxAge ? { age: am, value: val } : null;
+      })
+      .filter((p): p is PlottedPoint => p !== null);
+  const reportBand: TargetBand | undefined =
+    target && !rInfant
+      ? { low: target.low, high: target.high, label: `Target ${target.mph.toFixed(0)} cm` }
+      : undefined;
+
+  const buildGrowthReport = (): GrowthReport | null => {
+    if (!selectedPatient) return null;
+    const cell = (measure: Measure, am: number, val: number | null) => {
+      if (val == null) return undefined;
+      const a = am >= 0 && am <= MAX_AGE_MONTHS ? assess(measure, sex, am, val, refSet) : null;
+      return { value: val.toFixed(1), centile: a ? fmtCentile(a.centile) : undefined };
+    };
+    const visits: ReportVisitColumn[] = [];
+    let prev: { age: number; h: number } | null = null;
+    for (const v of reportVisitList) {
+      const am = visitAgeMonths(selectedPatient, v.date);
+      const bmi = v.heightCm && v.weightKg ? bmiFrom(v.weightKg, v.heightCm) : null;
+      let velocity: string | undefined;
+      if (prev && v.heightCm != null) {
+        const hv = heightVelocity(prev.h, prev.age, v.heightCm, am);
+        if (hv) velocity = hv.cmPerYear.toFixed(1);
+      }
+      visits.push({
+        date: v.date,
+        ageLabel: formatAge(am),
+        height: cell('height', am, v.heightCm),
+        weight: cell('weight', am, v.weightKg),
+        bmi: cell('bmi', am, bmi),
+        velocity,
+        puberty: pubertyReportCells(selectedPatient.sex, v.puberty),
+      });
+      if (v.heightCm != null) prev = { age: am, h: v.heightCm };
+    }
+    const latestAge = reportAges.length ? reportAges[reportAges.length - 1] : null;
+    return {
+      appName: APP_NAME,
+      developer: DEVELOPER,
+      demographics: {
+        name: selectedPatient.name,
+        mrn: selectedPatient.mrn || undefined,
+        guardianName: selectedPatient.guardianName || undefined,
+        sex: selectedPatient.sex[0].toUpperCase() + selectedPatient.sex.slice(1),
+        dobLabel: selectedPatient.dob,
+        ageLabel: latestAge != null ? formatAge(latestAge) : '—',
+        fatherHeight: selectedPatient.fatherHeightCm != null ? `${selectedPatient.fatherHeightCm} cm` : undefined,
+        motherHeight: selectedPatient.motherHeightCm != null ? `${selectedPatient.motherHeightCm} cm` : undefined,
+        mph: target
+          ? `${target.mph.toFixed(1)} cm (${target.low.toFixed(0)}–${target.high.toFixed(0)})`
+          : undefined,
+        gestation:
+          selectedPatient.gestWeeks != null && selectedPatient.gestWeeks < TERM_WEEKS
+            ? `${selectedPatient.gestWeeks} wk (preterm)`
+            : undefined,
+        reference: referenceLabel(refSet),
+      },
+      visits,
+      pubertyRows: selectedPatient.sex === 'male' ? MALE_PUBERTY_ROWS : FEMALE_PUBERTY_ROWS,
+    };
+  };
+
   const ageOutOfRange = effAge != null && effAge > MAX_AGE_MONTHS;
   const hasResults = Object.keys(assessments).length > 0;
   const canSaveVisit = hasMeasurement || hasPubertyData(puberty);
@@ -443,6 +594,8 @@ export default function App() {
     const p: Patient = {
       id: uid(),
       name: newName.trim(),
+      guardianName: guardianName.trim() || undefined,
+      mrn: mrn.trim() || undefined,
       sex,
       dob,
       gestWeeks: gestWeeks ?? null,
@@ -454,6 +607,20 @@ export default function App() {
     setPatients((prev) => [...prev, p]);
     setSelectedId(p.id);
     setNewName('');
+  };
+
+  // Persist administrative demographics (guardian name, MRN) back to the record on
+  // blur — recorded once, editable to correct. No-ops when unchanged.
+  const persistDemographics = () => {
+    if (!selectedPatient) return;
+    const g = guardianName.trim() || undefined;
+    const m = mrn.trim() || undefined;
+    if ((selectedPatient.guardianName || undefined) === g && (selectedPatient.mrn || undefined) === m) {
+      return;
+    }
+    setPatients((prev) =>
+      prev.map((p) => (p.id === selectedPatient.id ? { ...p, guardianName: g, mrn: m } : p)),
+    );
   };
 
   // Persist parent heights back to the selected record (on blur). Parent height
@@ -546,28 +713,6 @@ export default function App() {
   // ---- exports ----
   const getSvg = () => chartRef.current?.querySelector('svg') as SVGSVGElement | null;
 
-  const buildReportMeta = (): ReportMeta => ({
-    appName: APP_NAME,
-    developer: DEVELOPER,
-    sex: sex[0].toUpperCase() + sex.slice(1),
-    ageLabel: ageMonths != null ? `${formatAge(ageMonths)} (${ageMonths.toFixed(2)} mo)` : '—',
-    dateLabel:
-      (selectedPatient ? `${selectedPatient.name} · ` : '') +
-      (ageMode === 'dob' ? `DOB ${dob} · visit ${visit}` : 'Age entered directly'),
-    chartTitle: `${measureMeta.label}-for-age · ${sourceLabel}`,
-    measurements: MEASURES.filter((m) => assessments[m.key]).map((m) => {
-      const a = assessments[m.key]!;
-      const v = values[m.key]!;
-      return {
-        label: m.label,
-        value: `${v.toFixed(1)} ${m.unit}`,
-        z: `${a.z >= 0 ? '+' : ''}${a.z.toFixed(2)}`,
-        centile: fmtCentile(a.centile),
-        source: a.source,
-      };
-    }),
-  });
-
   const csvForVisit = (
     date: string,
     am: number,
@@ -617,9 +762,21 @@ export default function App() {
       subtitle,
     });
   };
-  const onExportPdf = () => {
-    const svg = getSvg();
-    if (svg) void exportReportPdf(svg, buildReportMeta(), `${fileBase}.pdf`);
+  // Full clinical report (PDF): all four charts + demographics + per-visit table.
+  // Charts are grabbed from the hidden report scaffold (rendered for every measure).
+  const onExportReport = () => {
+    const report = buildGrowthReport();
+    if (!report) return;
+    const c = reportChartsRef.current;
+    const pick = (key: string) =>
+      (c?.querySelector(`[data-report-chart="${key}"] svg`) as SVGSVGElement | null) ?? null;
+    const svgs: ReportChartSvgs = {
+      height: pick('height'),
+      weight: pick('weight'),
+      bmi: pick('bmi'),
+      velocity: pick('velocity'),
+    };
+    void exportGrowthReportPdf(report, svgs, `${fileBase}_report.pdf`);
   };
   const onExportCsv = () => {
     const rows = selectedPatient
@@ -800,26 +957,6 @@ export default function App() {
               for this maturity category.
             </p>
           )}
-
-          {selectedPatient && (
-            <div className="save-visit-bar">
-              {editingVisitId && (
-                <span className="editing-note">
-                  ✎ Editing the {visit} visit — Update replaces it.
-                </span>
-              )}
-              <div className="save-visit-buttons">
-                <button className="primary" onClick={saveVisit} disabled={!canSaveVisit}>
-                  {editingVisitId ? 'Update visit' : 'Save visit'}
-                </button>
-                {editingVisitId && (
-                  <button className="danger" onClick={cancelEdit}>
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
         </section>
 
         <section className="panel patient" aria-label="Patient">
@@ -940,6 +1077,27 @@ export default function App() {
             {ageOutOfRange && <span className="warn"> · beyond 20 y (out of chart range)</span>}
           </div>
 
+          <div className="grid2">
+            <label>
+              Father / guardian name (optional)
+              <input
+                type="text"
+                value={guardianName}
+                onChange={(e) => setGuardianName(e.target.value)}
+                onBlur={persistDemographics}
+              />
+            </label>
+            <label>
+              Record no. / MRN (optional)
+              <input
+                type="text"
+                value={mrn}
+                onChange={(e) => setMrn(e.target.value)}
+                onBlur={persistDemographics}
+              />
+            </label>
+          </div>
+
           {!selectedPatient ? (
             <div className="new-patient">
               <input
@@ -956,8 +1114,8 @@ export default function App() {
           ) : (
             <>
               <p className="hint" style={{ marginBottom: 8 }}>
-                Enter measurements in the panel below, then <strong>Save visit</strong> at its foot.
-                Use ✎ to correct a saved visit.
+                Enter measurements and puberty below, then <strong>Save visit</strong> at the foot of
+                the Puberty panel. Use ✎ to correct a saved visit.
               </p>
               <table className="visits-table">
                 <thead>
@@ -1200,11 +1358,20 @@ export default function App() {
               </>
             )}
             <div className="export-bar">
+              <button
+                className="report-btn"
+                onClick={onExportReport}
+                disabled={!selectedPatient}
+                title={
+                  selectedPatient
+                    ? 'Full clinical report: all charts + per-visit table (PDF)'
+                    : 'Select a patient record to export a report'
+                }
+              >
+                Report (PDF)
+              </button>
               <button onClick={onExportPng} disabled={!canExport && !showVelocity}>
                 PNG
-              </button>
-              <button onClick={onExportPdf} disabled={!hasResults}>
-                PDF
               </button>
               <button onClick={onExportCsv} disabled={!canExport}>
                 CSV
@@ -1240,7 +1407,78 @@ export default function App() {
             Staging uses Tanner criteria; SPL norms: Feldman &amp; Smith 1975 (verify before clinical
             use).
           </p>
+
+          {selectedPatient && (
+            <div className="save-visit-bar">
+              {editingVisitId && (
+                <span className="editing-note">✎ Editing the {visit} visit — Update replaces it.</span>
+              )}
+              <div className="save-visit-buttons">
+                <button className="primary" onClick={saveVisit} disabled={!canSaveVisit}>
+                  {editingVisitId ? 'Update visit' : 'Save visit'}
+                </button>
+                {editingVisitId && (
+                  <button className="danger" onClick={cancelEdit}>
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </section>
+
+        {/* Off-screen report charts: one per measure (+ velocity), rendered from the
+            patient's saved visits so the PDF report can rasterise all of them at once.
+            Not shown on screen. */}
+        {selectedPatient && (
+          <div ref={reportChartsRef} className="report-charts" aria-hidden="true">
+            <div data-report-chart="height">
+              <GrowthChart
+                title="Height / length-for-age"
+                unit="cm"
+                xUnit={rXUnit}
+                minAge={rMinAge}
+                maxAge={rMaxAge}
+                curves={reportCurves.height}
+                points={reportPointsFor('height')}
+                band={reportBand}
+                width={640}
+                height={620}
+              />
+            </div>
+            <div data-report-chart="weight">
+              <GrowthChart
+                title="Weight-for-age"
+                unit="kg"
+                xUnit={rXUnit}
+                minAge={rMinAge}
+                maxAge={rMaxAge}
+                curves={reportCurves.weight}
+                points={reportPointsFor('weight')}
+              />
+            </div>
+            <div data-report-chart="bmi">
+              <GrowthChart
+                title="BMI-for-age"
+                unit="kg/m²"
+                xUnit={rXUnit}
+                minAge={rMinAge}
+                maxAge={rMaxAge}
+                curves={reportCurves.bmi}
+                points={reportPointsFor('bmi')}
+              />
+            </div>
+            {velocityPoints.length > 0 && (
+              <div data-report-chart="velocity">
+                <VelocityChart
+                  points={velocityPoints}
+                  milestones={milestones}
+                  menarcheAgeYears={menarcheAgeYears}
+                />
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
       <footer className="app-footer">

@@ -16,6 +16,10 @@ export interface Visit {
 export interface Patient {
   id: string;
   name: string;
+  /** Optional father's / guardian name — administrative, shown on the report header. */
+  guardianName?: string;
+  /** Optional record number (MRN) — administrative, shown on the report header. */
+  mrn?: string;
   sex: Sex;
   dob: string; // yyyy-mm-dd — required for longitudinal age
   /** Gestational age at birth (weeks); enables corrected-age plotting for preterms. */

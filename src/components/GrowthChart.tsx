@@ -33,13 +33,14 @@ interface Props {
   points: PlottedPoint[];
   band?: TargetBand; // e.g. mid-parental target height range
   markers?: ChartMarker[]; // e.g. height plotted at bone age
+  /** Override viewBox size — e.g. a near-square chart for the printed report. */
+  width?: number;
+  height?: number;
 }
 
-const W = 840;
-const H = 560;
+const DEFAULT_W = 840;
+const DEFAULT_H = 560;
 const M = { top: 28, right: 54, bottom: 46, left: 58 };
-const plotW = W - M.left - M.right;
-const plotH = H - M.top - M.bottom;
 
 // Styles are embedded in the SVG (with literal colours, not CSS variables) so the
 // chart is fully self-contained and rasterises correctly when exported to PNG/PDF.
@@ -77,7 +78,13 @@ export function GrowthChart({
   points,
   band,
   markers,
+  width = DEFAULT_W,
+  height = DEFAULT_H,
 }: Props) {
+  const W = width;
+  const H = height;
+  const plotW = W - M.left - M.right;
+  const plotH = H - M.top - M.bottom;
   // value range across all curves + patient points, with padding
   let yMin = Infinity;
   let yMax = -Infinity;
