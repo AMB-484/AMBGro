@@ -164,7 +164,9 @@ export function GrowthChart({
             />
             <line x1={M.left} x2={M.left + plotW} y1={yScale(band.low)} y2={yScale(band.low)} className="target-line" />
             <line x1={M.left} x2={M.left + plotW} y1={yScale(band.high)} y2={yScale(band.high)} className="target-line" />
-            <text x={M.left + plotW - 4} y={yScale(band.high) - 4} textAnchor="end" className="target-label">
+            {/* label on the left, just inside the band — the right edge collides with
+                the 97th-centile curve as it rises into the target range */}
+            <text x={M.left + 6} y={yScale(band.high) + 13} textAnchor="start" className="target-label">
               {band.label}
             </text>
           </g>

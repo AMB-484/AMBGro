@@ -213,17 +213,20 @@ export async function exportGrowthReportPdf(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
     setInk(INK.head);
-    doc.text(report.appName, margin, 44);
+    doc.text(report.appName, margin, 42);
+    // byline sits under the app name — it credits the app's developer, not the
+    // patient's clinician (which is how it reads under the right-hand title)
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    setInk(INK.muted);
+    doc.text(`by ${report.developer}`, margin, 54);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     setInk(INK.muted);
-    doc.text(subtitle.toUpperCase(), contentR, 38, { align: 'right' });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text(`by ${report.developer}`, contentR, 50, { align: 'right' });
+    doc.text(subtitle.toUpperCase(), contentR, 46, { align: 'right' });
     doc.setDrawColor(INK.rule[0], INK.rule[1], INK.rule[2]);
     doc.setLineWidth(0.8);
-    doc.line(margin, 58, contentR, 58);
+    doc.line(margin, 62, contentR, 62);
   };
 
   // ---------- page 1: height chart + demographics + first table chunk ----------
