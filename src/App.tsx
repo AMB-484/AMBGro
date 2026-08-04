@@ -50,8 +50,21 @@ import {
   exportPatientsJson,
   parsePatientsJson,
   mergePatients,
+  isEncryptedBackup,
+  exportPatientsEncrypted,
+  parsePatientsEncrypted,
 } from './store/patients';
 import type { Patient, Visit } from './store/patients';
+import {
+  suspendAutoLock,
+  resumeAutoLock,
+  biometricSupported,
+  biometricEnabled,
+  enableBiometric,
+  disableBiometric,
+} from './store/vault';
+import { requestLock } from './lock/lockBus';
+import PassphraseDialog from './lock/PassphraseDialog';
 import './App.css';
 
 const APP_NAME = 'AMBGro';
@@ -206,13 +219,33 @@ export default function App() {
   const firstRun = useRef(true);
   const selectedPatient = patients.find((p) => p.id === selectedId) ?? null;
 
+  // ---- security controls (lock / biometric / encrypted backup) ----
+  const [bioAvailable, setBioAvailable] = useState(false);
+  const [bioOn, setBioOn] = useState(false);
+  const [askExportPass, setAskExportPass] = useState(false);
+  const [pendingImportText, setPendingImportText] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void biometricSupported().then((ok) => {
+      if (live) {
+        setBioAvailable(ok);
+        setBioOn(biometricEnabled());
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
   useEffect(() => {
     // Skip the initial mount so we don't rewrite storage before any change.
     if (firstRun.current) {
       firstRun.current = false;
       return;
     }
-    setSaveError(!savePatients(patients));
+    // savePatients is async now (AES-GCM encryption via the vault).
+    void savePatients(patients).then((ok) => setSaveError(!ok));
   }, [patients]);
 
   // on any patient switch (including back to ad-hoc), clear the transient inputs so a
@@ -796,32 +829,96 @@ export default function App() {
     if (rows.length) exportCsv(rows, `${fileBase}.csv`);
   };
 
+  // ---- security actions ----
+  const onToggleBiometric = async () => {
+    try {
+      if (bioOn) {
+        await disableBiometric();
+        setBioOn(false);
+      } else {
+        await enableBiometric();
+        setBioOn(true);
+      }
+    } catch {
+      setImportMsg('Could not update biometric unlock.');
+    }
+  };
+
   // ---- backup / restore (full patient database) ----
-  const onExportData = () => {
-    if (patients.length === 0) return;
-    const blob = new Blob([exportPatientsJson(patients)], { type: 'application/json' });
+  const downloadText = (text: string, filename: string) => {
+    const blob = new Blob([text], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `ambgro-backup-${today}.json`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    setImportMsg(`Backed up ${patients.length} patient record(s).`);
+  };
+
+  const onExportData = () => {
+    if (patients.length === 0) return;
+    downloadText(exportPatientsJson(patients), `ambgro-backup-${today}.json`);
+    setImportMsg(`Backed up ${patients.length} patient record(s) (unencrypted).`);
+  };
+
+  const onExportEncrypted = async (passphrase: string) => {
+    setAskExportPass(false);
+    if (patients.length === 0) return;
+    try {
+      const text = await exportPatientsEncrypted(patients, passphrase);
+      downloadText(text, `ambgro-backup-${today}.enc.json`);
+      setImportMsg(`Backed up ${patients.length} record(s), encrypted.`);
+    } catch {
+      setImportMsg('Could not create the encrypted backup.');
+    }
+  };
+
+  const applyImport = (incoming: Patient[]) => {
+    const existingIds = new Set(patients.map((p) => p.id));
+    const added = incoming.filter((p) => !existingIds.has(p.id)).length;
+    const updated = incoming.length - added;
+    setPatients((prev) => mergePatients(prev, incoming));
+    setImportMsg(`Imported ${incoming.length} record(s): ${added} added, ${updated} updated.`);
   };
 
   const onImportData = async (file: File) => {
     try {
-      const incoming = parsePatientsJson(await file.text());
-      const existingIds = new Set(patients.map((p) => p.id));
-      const added = incoming.filter((p) => !existingIds.has(p.id)).length;
-      const updated = incoming.length - added;
-      setPatients((prev) => mergePatients(prev, incoming));
-      setImportMsg(`Imported ${incoming.length} record(s): ${added} added, ${updated} updated.`);
+      const text = await file.text();
+      // Encrypted backups need a passphrase — defer to the dialog.
+      if (isEncryptedBackup(text)) {
+        setPendingImportText(text);
+        return;
+      }
+      applyImport(parsePatientsJson(text));
     } catch (err) {
       setImportMsg(err instanceof Error ? err.message : 'Could not read that backup file.');
     }
+  };
+
+  const onImportEncrypted = async (passphrase: string) => {
+    const text = pendingImportText;
+    setPendingImportText(null);
+    if (!text) return;
+    try {
+      applyImport(await parsePatientsEncrypted(text, passphrase));
+    } catch (err) {
+      setImportMsg(err instanceof Error ? err.message : 'Could not decrypt that backup.');
+    }
+  };
+
+  // A system file picker briefly backgrounds the app; keep it from auto-locking
+  // and re-arm once focus returns (with a safety timeout if it never does).
+  const openImportPicker = () => {
+    suspendAutoLock();
+    const resume = () => {
+      window.removeEventListener('focus', resume);
+      window.setTimeout(resumeAutoLock, 500);
+    };
+    window.addEventListener('focus', resume, { once: true });
+    window.setTimeout(resumeAutoLock, 30_000);
+    importRef.current?.click();
   };
 
   const canExport = hasResults || (selectedPatient != null && selectedPatient.visits.length > 0);
@@ -1167,10 +1264,17 @@ export default function App() {
           )}
 
           <div className="backup-bar">
-            <button onClick={onExportData} disabled={patients.length === 0} title="Download all records as a JSON backup">
+            <button onClick={onExportData} disabled={patients.length === 0} title="Download all records as a plain JSON backup">
               Export data
             </button>
-            <button onClick={() => importRef.current?.click()} title="Restore records from a backup file">
+            <button
+              onClick={() => setAskExportPass(true)}
+              disabled={patients.length === 0}
+              title="Download a passphrase-encrypted backup"
+            >
+              Export encrypted
+            </button>
+            <button onClick={openImportPicker} title="Restore records from a backup file">
               Import data
             </button>
             <input
@@ -1184,6 +1288,20 @@ export default function App() {
                 e.target.value = '';
               }}
             />
+          </div>
+
+          <div className="backup-bar security-bar">
+            <button onClick={requestLock} title="Lock the app now and require the PIN">
+              🔒 Lock now
+            </button>
+            {bioAvailable && (
+              <button
+                onClick={() => void onToggleBiometric()}
+                title="Use fingerprint / face to unlock on this device"
+              >
+                {bioOn ? 'Disable biometric unlock' : 'Enable biometric unlock'}
+              </button>
+            )}
           </div>
           {importMsg && <p className="hint" role="status">{importMsg}</p>}
         </section>
@@ -1487,6 +1605,26 @@ export default function App() {
           clinical judgement.
         </span>
       </footer>
+
+      {askExportPass && (
+        <PassphraseDialog
+          title="Encrypt this backup"
+          sub="Choose a passphrase. You'll need it to restore — it isn't stored anywhere and can't be recovered."
+          confirmLabel="Create encrypted backup"
+          confirm
+          onSubmit={(p) => void onExportEncrypted(p)}
+          onCancel={() => setAskExportPass(false)}
+        />
+      )}
+      {pendingImportText && (
+        <PassphraseDialog
+          title="Encrypted backup"
+          sub="Enter the passphrase this backup was encrypted with."
+          confirmLabel="Decrypt & import"
+          onSubmit={(p) => void onImportEncrypted(p)}
+          onCancel={() => setPendingImportText(null)}
+        />
+      )}
     </div>
   );
 }
