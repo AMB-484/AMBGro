@@ -102,6 +102,7 @@ function pubertySummary(sex: Sex, p?: PubertyAssessment): string {
     if (p.tannerGenitalia) parts.push(tannerBadge('genitalia', p.tannerGenitalia));
     const tv = maxTesticularVol(p);
     if (tv != null) parts.push(`${tv}mL`);
+    if (p.stretchedPenileLength != null) parts.push(`SPL ${p.stretchedPenileLength.toFixed(1)}cm`);
   } else {
     if (p.tannerBreast) parts.push(tannerBadge('breast', p.tannerBreast));
     if (p.menarcheAchieved) parts.push('M+');
@@ -130,6 +131,7 @@ const MALE_PUBERTY_ROWS: ReportPubertyRow[] = [
   { key: 'genitalia', label: 'Tanner genitalia' },
   { key: 'pubicHair', label: 'Tanner pubic hair' },
   { key: 'testis', label: 'Testicular volume (mL)' },
+  { key: 'spl', label: 'Stretched penile length (cm)' },
 ];
 const FEMALE_PUBERTY_ROWS: ReportPubertyRow[] = [
   { key: 'breast', label: 'Tanner breast' },
@@ -145,6 +147,7 @@ function pubertyReportCells(sex: Sex, p?: PubertyAssessment): Record<string, str
     if (p.tannerGenitalia) out.genitalia = `G${p.tannerGenitalia}`;
     const tv = maxTesticularVol(p);
     if (tv != null) out.testis = String(tv);
+    if (p.stretchedPenileLength != null) out.spl = p.stretchedPenileLength.toFixed(1);
   } else {
     if (p.tannerBreast) out.breast = `B${p.tannerBreast}`;
     if (p.menarcheAchieved) out.menarche = p.menarcheDate ?? 'Yes';
