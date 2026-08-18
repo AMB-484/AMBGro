@@ -437,6 +437,17 @@ button.link:hover {
   gap: 8px;
   margin-bottom: 6px;
 }
+.security-bar {
+  flex-wrap: wrap;
+  align-items: center;
+}
+/* Full-width so the (sometimes long) reason wraps onto its own line and is never
+   clipped beside the Lock button on a narrow phone. */
+.bio-reason {
+  flex-basis: 100%;
+  font-size: 12px;
+  line-height: 1.35;
+}
 .backup-bar button {
   font: inherit;
   font-size: 12px;

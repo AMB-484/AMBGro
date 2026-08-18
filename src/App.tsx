@@ -58,7 +58,7 @@ import type { Patient, Visit } from './store/patients';
 import {
   suspendAutoLock,
   resumeAutoLock,
-  biometricSupported,
+  biometricStatus,
   biometricEnabled,
   enableBiometric,
   disableBiometric,
@@ -224,18 +224,27 @@ export default function App() {
 
   // ---- security controls (lock / biometric / encrypted backup) ----
   const [bioAvailable, setBioAvailable] = useState(false);
+  const [bioReason, setBioReason] = useState('');
   const [bioOn, setBioOn] = useState(false);
   const [askExportPass, setAskExportPass] = useState(false);
   const [pendingImportText, setPendingImportText] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
-    void biometricSupported().then((ok) => {
-      if (live) {
-        setBioAvailable(ok);
-        setBioOn(biometricEnabled());
-      }
-    });
+    void biometricStatus()
+      .then((s) => {
+        if (live) {
+          setBioAvailable(s.available);
+          setBioReason(s.reason);
+          setBioOn(biometricEnabled());
+        }
+      })
+      .catch((e: unknown) => {
+        if (live) {
+          setBioAvailable(false);
+          setBioReason('status error: ' + (e instanceof Error ? e.message : String(e)));
+        }
+      });
     return () => {
       live = false;
     };
@@ -1297,13 +1306,17 @@ export default function App() {
             <button onClick={requestLock} title="Lock the app now and require the PIN">
               🔒 Lock now
             </button>
-            {bioAvailable && (
+            {bioAvailable ? (
               <button
                 onClick={() => void onToggleBiometric()}
-                title="Use fingerprint / face to unlock on this device"
+                title="Use fingerprint to unlock on this device"
               >
                 {bioOn ? 'Disable biometric unlock' : 'Enable biometric unlock'}
               </button>
+            ) : (
+              <span className="muted bio-reason">
+                Biometric unlock unavailable — {bioReason}
+              </span>
             )}
           </div>
           {importMsg && <p className="hint" role="status">{importMsg}</p>}

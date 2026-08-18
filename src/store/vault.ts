@@ -28,6 +28,8 @@ import {
   type KdfParams,
 } from './crypto';
 import { biometricAvailable, clearSecret, fetchSecret, storeSecret } from './biometric';
+export { biometricStatus } from './biometric';
+export type { BiometricStatus } from './biometric';
 import { coercePatients } from './patients';
 import type { Patient } from './patients';
 
