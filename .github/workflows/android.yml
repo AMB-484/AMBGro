@@ -42,6 +42,11 @@ jobs:
       - name: Use optimized ProGuard defaults (AGP 9+)
         run: sed -i "s/proguard-android\.txt/proguard-android-optimize.txt/" android/app/build.gradle
 
+      # cap add android scaffolds Capacitor's default logo; regenerate the AMBGro
+      # launcher icons over it (the android/ tree is not committed).
+      - name: Generate launcher icons
+        run: npm run icons
+
       - name: Sync web assets into the Android project
         run: npx cap sync android
 
