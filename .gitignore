@@ -18,6 +18,11 @@ dist-ssr
 .capacitor
 dev-dist
 
+# Release signing secrets — NEVER commit these
+keystore.properties
+*.jks
+*.keystore
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
