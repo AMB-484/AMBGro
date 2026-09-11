@@ -958,13 +958,11 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <div>
+        <div className="header-top">
           <h1>{APP_NAME}</h1>
-          <p className="tagline">Digital growth charts · WHO 0–2 y &amp; CDC 2–20 y</p>
-        </div>
-        <div className="header-right">
-          <span className="dev">by {DEVELOPER}</span>
-          <div className="options-menu">
+          <div className="header-right">
+            <span className="dev">by {DEVELOPER}</span>
+            <div className="options-menu">
             <button
               className="options-btn"
               aria-haspopup="menu"
@@ -1038,7 +1036,13 @@ export default function App() {
               </>
             )}
           </div>
+          </div>
         </div>
+        <p className="tagline">
+          Digital growth charts
+          <br />
+          WHO 0–2 years &amp; CDC 2–20 years
+        </p>
         <input
           ref={importRef}
           type="file"
@@ -1207,9 +1211,9 @@ export default function App() {
 
           {recordTab === 'new' ? (
             <>
-              <div className="grid2">
+              <div className="grid2 bio-grid">
                 <label>
-                  Patient name (optional)
+                  Patient name *
                   <input
                     type="text"
                     value={newName}
@@ -1217,7 +1221,7 @@ export default function App() {
                   />
                 </label>
                 <label>
-                  Father / guardian name (optional)
+                  Father / guardian name *
                   <input
                     type="text"
                     value={guardianName}
@@ -1225,10 +1229,11 @@ export default function App() {
                   />
                 </label>
               </div>
-              <label style={{ marginBottom: 12 }}>
-                Record no. / MRN (optional)
+              <label>
+                Record no. / MRN *
                 <input type="text" value={mrn} onChange={(e) => setMrn(e.target.value)} />
               </label>
+              <p className="hint optional-note">* Optional — leave blank to skip.</p>
             </>
           ) : (
             <>
@@ -1238,36 +1243,41 @@ export default function App() {
                   type="text"
                   placeholder="Search by name or MRN"
                   value={patientSearch}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
                   onChange={(e) => setPatientSearch(e.target.value)}
                 />
               </label>
               <div className="field">
-                <select
-                  className="select"
-                  value={selectedId ?? ''}
-                  onChange={(e) => setSelectedId(e.target.value || null)}
-                >
-                  <option value="">
-                    {patients.length === 0 ? '— No saved records —' : '— Select a patient —'}
-                  </option>
-                  {patientMatches.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.mrn ? `${p.name} (${p.mrn})` : p.name}
-                    </option>
-                  ))}
-                </select>
                 {patients.length === 0 ? (
                   <span className="hint">
                     No saved records yet — switch to New patient to create one.
                   </span>
+                ) : patientMatches.length === 0 ? (
+                  <span className="hint">No records match “{patientSearch}”.</span>
                 ) : (
-                  patientMatches.length === 0 && (
-                    <span className="hint">No records match “{patientSearch}”.</span>
-                  )
+                  <ul className="patient-results">
+                    {patientMatches.map((p) => (
+                      <li key={p.id}>
+                        <button
+                          type="button"
+                          className={p.id === selectedId ? 'on' : ''}
+                          onClick={() => setSelectedId(p.id)}
+                        >
+                          <span className="pr-name">{p.name}</span>
+                          {p.mrn && <span className="pr-mrn">{p.mrn}</span>}
+                          <span className="pr-visits">
+                            {p.visits.length} visit{p.visits.length === 1 ? '' : 's'}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </div>
               {selectedPatient && (
-                <div className="grid2">
+                <div className="grid2 bio-grid">
                   <label>
                     Father / guardian name
                     <input

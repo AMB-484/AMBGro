@@ -17,6 +17,7 @@
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
+import { suspendAutoLock, resumeAutoLock } from '../store/vault';
 
 /** Base64 (no data: prefix) for a blob, via FileReader. */
 function blobToBase64(blob: Blob): Promise<string> {
@@ -65,6 +66,17 @@ export async function saveBlob(blob: Blob, filename: string): Promise<void> {
     data: base64,
     directory: Directory.Cache,
   });
+  // The share sheet backgrounds the app, which would otherwise trip the
+  // lock-on-background guard and force a PIN re-entry when the user returns.
+  // Suspend auto-lock across the share and re-arm once focus comes back (with a
+  // safety timeout in case the focus event never fires).
+  suspendAutoLock();
+  const rearm = () => {
+    window.removeEventListener('focus', rearm);
+    window.setTimeout(resumeAutoLock, 500);
+  };
+  window.addEventListener('focus', rearm, { once: true });
+  window.setTimeout(resumeAutoLock, 30_000);
   try {
     await Share.share({
       title: filename,

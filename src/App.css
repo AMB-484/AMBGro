@@ -9,11 +9,19 @@
 
 .app-header {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+/* title (left) and the developer credit + options menu (right) share one row;
+   the tagline sits on its own full-width line below so it never has to wrap
+   mid-phrase against the credit column. */
+.header-top {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border);
 }
 .app-header h1 {
   font-size: 26px;
@@ -22,7 +30,6 @@
 .tagline {
   color: var(--text-muted);
   font-size: 13px;
-  margin-top: 2px;
 }
 .dev {
   color: var(--text-muted);
@@ -324,6 +331,66 @@ input:disabled {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
+}
+
+/* Biodata name/MRN fields: bottom-align the inputs so a label that wraps to two
+   lines (e.g. "Father / guardian name") doesn't push its input out of line with
+   its neighbour. Grid stretches both labels to equal height; flex-end then keeps
+   each input at the foot of its cell. */
+.bio-grid > label {
+  justify-content: flex-end;
+}
+.optional-note {
+  margin-top: 2px;
+  margin-bottom: 12px;
+}
+
+/* Follow-up: tap a result to load that record. */
+.patient-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.patient-results button {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  text-align: left;
+  font: inherit;
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+.patient-results button:hover {
+  border-color: var(--accent-border);
+}
+.patient-results button.on {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.patient-results .pr-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+.patient-results .pr-mrn {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.patient-results .pr-visits {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .new-patient {
