@@ -35,6 +35,13 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
+      # AGP 9+ rejects the legacy getDefaultProguardFile('proguard-android.txt')
+      # (it bundles -dontoptimize) as a hard error at configuration time. Capacitor
+      # still scaffolds the old name, so swap in the -optimize variant. No-op if a
+      # future template already uses it.
+      - name: Use optimized ProGuard defaults (AGP 9+)
+        run: sed -i "s/proguard-android\.txt/proguard-android-optimize.txt/" android/app/build.gradle
+
       - name: Sync web assets into the Android project
         run: npx cap sync android
 
