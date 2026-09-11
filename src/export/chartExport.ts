@@ -2,6 +2,8 @@
 // (jsPDF clinical report), and CSV. All fully offline. jsPDF is loaded on demand
 // (dynamic import) so it stays out of the initial bundle.
 
+import { saveBlob } from './save';
+
 // ---- professional multi-page growth report ----
 
 /** A single measured value with its centile, shown stacked in a table cell. */
@@ -57,17 +59,6 @@ export interface ReportChartSvgs {
   weight?: SVGSVGElement | null;
   bmi?: SVGSVGElement | null;
   velocity?: SVGSVGElement | null;
-}
-
-function download(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
 }
 
 /** Rasterise an SVG element to a canvas at `scale`x resolution, on white. */
@@ -162,12 +153,8 @@ export async function exportChartPng(svg: SVGSVGElement, filename: string, heade
   const scale = 2.5;
   const chart = await renderChartCanvas(svg, scale);
   const canvas = header ? composeWithHeader(chart, header, scale) : chart;
-  await new Promise<void>((resolve) =>
-    canvas.toBlob((blob) => {
-      if (blob) download(blob, filename);
-      resolve();
-    }, 'image/png'),
-  );
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+  if (blob) await saveBlob(blob, filename);
 }
 
 /**
@@ -387,7 +374,9 @@ export async function exportGrowthReportPdf(
     doc.text(`Page ${p} of ${total}`, contentR, pageH - 22, { align: 'right' });
   }
 
-  doc.save(filename);
+  // doc.save() triggers an <a download> click, which is inert in the Android
+  // WebView; go through saveBlob so the native share/save sheet is used there.
+  await saveBlob(doc.output('blob') as Blob, filename);
 }
 
 /** Row definitions for the per-visit table, in display order (measure rows carry centiles). */
@@ -565,6 +554,6 @@ export function buildCsv(visits: CsvVisit[]): string {
   return lines.join('\n');
 }
 
-export function exportCsv(visits: CsvVisit[], filename: string) {
-  download(new Blob([buildCsv(visits)], { type: 'text/csv;charset=utf-8' }), filename);
+export async function exportCsv(visits: CsvVisit[], filename: string) {
+  await saveBlob(new Blob([buildCsv(visits)], { type: 'text/csv;charset=utf-8' }), filename);
 }

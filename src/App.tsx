@@ -35,6 +35,7 @@ import { PubertyPad } from './components/PubertyPad';
 import { VelocityChart } from './components/VelocityChart';
 import type { VelocityPoint, Milestone } from './components/VelocityChart';
 import { exportChartPng, exportGrowthReportPdf, exportCsv } from './export/chartExport';
+import { saveText } from './export/save';
 import type {
   CsvVisit,
   GrowthReport,
@@ -215,12 +216,28 @@ export default function App() {
   // ---- patient records ----
   const [patients, setPatients] = useState<Patient[]>(() => loadPatients());
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Record mode: "new" = a patient not (yet) in records — enter biodata to keep a
+  // tracked record, or skip it for a one-time (ad-hoc) calculation. "followup" =
+  // pick an existing record to add a visit to.
+  const [recordTab, setRecordTab] = useState<'new' | 'followup'>('new');
+  const [patientSearch, setPatientSearch] = useState('');
   const [newName, setNewName] = useState('');
   const [saveError, setSaveError] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
   const firstRun = useRef(true);
   const selectedPatient = patients.find((p) => p.id === selectedId) ?? null;
+
+  // records matching the Follow-up search box (name or MRN, case-insensitive)
+  const patientMatches = useMemo(() => {
+    const q = patientSearch.trim().toLowerCase();
+    const list = [...patients].sort((a, b) => a.name.localeCompare(b.name));
+    if (!q) return list;
+    return list.filter(
+      (p) => p.name.toLowerCase().includes(q) || (p.mrn ?? '').toLowerCase().includes(q),
+    );
+  }, [patients, patientSearch]);
 
   // ---- security controls (lock / biometric / encrypted backup) ----
   const [bioAvailable, setBioAvailable] = useState(false);
@@ -650,8 +667,18 @@ export default function App() {
       visits: [],
     };
     setPatients((prev) => [...prev, p]);
+    setRecordTab('followup');
     setSelectedId(p.id);
     setNewName('');
+    setPatientSearch('');
+  };
+
+  // Switch to a blank "new patient" entry (ad-hoc until a record is created).
+  const startNewPatient = () => {
+    setRecordTab('new');
+    setSelectedId(null);
+    setNewName('');
+    setPatientSearch('');
   };
 
   // Persist administrative demographics (guardian name, MRN) back to the record on
@@ -838,7 +865,7 @@ export default function App() {
       : effAge != null
         ? [csvForVisit(ageMode === 'dob' ? visit : today, effAge, heightCm, weightKg, sex, refSet)]
         : [];
-    if (rows.length) exportCsv(rows, `${fileBase}.csv`);
+    if (rows.length) void exportCsv(rows, `${fileBase}.csv`);
   };
 
   // ---- security actions ----
@@ -857,22 +884,15 @@ export default function App() {
   };
 
   // ---- backup / restore (full patient database) ----
-  const downloadText = (text: string, filename: string) => {
-    const blob = new Blob([text], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
-
-  const onExportData = () => {
+  const onExportData = async () => {
     if (patients.length === 0) return;
-    downloadText(exportPatientsJson(patients), `ambgro-backup-${today}.json`);
-    setImportMsg(`Backed up ${patients.length} patient record(s) (unencrypted).`);
+    setMenuOpen(false);
+    try {
+      await saveText(exportPatientsJson(patients), `ambgro-backup-${today}.json`, 'application/json');
+      setImportMsg(`Backed up ${patients.length} patient record(s) (unencrypted).`);
+    } catch {
+      setImportMsg('Could not export the backup.');
+    }
   };
 
   const onExportEncrypted = async (passphrase: string) => {
@@ -880,7 +900,7 @@ export default function App() {
     if (patients.length === 0) return;
     try {
       const text = await exportPatientsEncrypted(patients, passphrase);
-      downloadText(text, `ambgro-backup-${today}.enc.json`);
+      await saveText(text, `ambgro-backup-${today}.enc.json`, 'application/json');
       setImportMsg(`Backed up ${patients.length} record(s), encrypted.`);
     } catch {
       setImportMsg('Could not create the encrypted backup.');
@@ -942,8 +962,100 @@ export default function App() {
           <h1>{APP_NAME}</h1>
           <p className="tagline">Digital growth charts · WHO 0–2 y &amp; CDC 2–20 y</p>
         </div>
-        <span className="dev">by {DEVELOPER}</span>
+        <div className="header-right">
+          <span className="dev">by {DEVELOPER}</span>
+          <div className="options-menu">
+            <button
+              className="options-btn"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-label="Options menu"
+              title="Options"
+              onClick={() => setMenuOpen((o) => !o)}
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+                <line x1="3" y1="6" x2="17" y2="6" />
+                <line x1="3" y1="10" x2="17" y2="10" />
+                <line x1="3" y1="14" x2="17" y2="14" />
+              </svg>
+            </button>
+            {menuOpen && (
+              <>
+                <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
+                <div className="menu-pop" role="menu">
+                  <span className="menu-head">Data</span>
+                  <button
+                    role="menuitem"
+                    onClick={() => void onExportData()}
+                    disabled={patients.length === 0}
+                  >
+                    Export data
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setAskExportPass(true);
+                    }}
+                    disabled={patients.length === 0}
+                  >
+                    Export encrypted backup
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      openImportPicker();
+                    }}
+                  >
+                    Import data
+                  </button>
+                  <div className="menu-sep" />
+                  <span className="menu-head">Security</span>
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      requestLock();
+                    }}
+                  >
+                    🔒 Lock now
+                  </button>
+                  {bioAvailable ? (
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        void onToggleBiometric();
+                      }}
+                    >
+                      {bioOn ? 'Disable biometric unlock' : 'Enable biometric unlock'}
+                    </button>
+                  ) : (
+                    <span className="menu-note">Biometric unlock unavailable — {bioReason}</span>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+        <input
+          ref={importRef}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void onImportData(f);
+            e.target.value = '';
+          }}
+        />
       </header>
+      {importMsg && (
+        <p className="app-status" role="status">
+          {importMsg}
+        </p>
+      )}
 
       <main className="layout">
         <section className="panel inputs" aria-label="Measurement" ref={measurementRef}>
@@ -1080,19 +1192,104 @@ export default function App() {
 
           <div className="field">
             <span className="field-label">Record</span>
-            <select
-              className="select"
-              value={selectedId ?? ''}
-              onChange={(e) => setSelectedId(e.target.value || null)}
-            >
-              <option value="">— Ad-hoc (one-time, no record) —</option>
-              {patients.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.sex[0].toUpperCase()}, {p.visits.length}v)
-                </option>
-              ))}
-            </select>
+            <div className="segmented">
+              <button className={recordTab === 'new' ? 'on' : ''} onClick={startNewPatient}>
+                New patient
+              </button>
+              <button
+                className={recordTab === 'followup' ? 'on' : ''}
+                onClick={() => setRecordTab('followup')}
+              >
+                Follow-up
+              </button>
+            </div>
           </div>
+
+          {recordTab === 'new' ? (
+            <>
+              <div className="grid2">
+                <label>
+                  Patient name (optional)
+                  <input
+                    type="text"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Father / guardian name (optional)
+                  <input
+                    type="text"
+                    value={guardianName}
+                    onChange={(e) => setGuardianName(e.target.value)}
+                  />
+                </label>
+              </div>
+              <label style={{ marginBottom: 12 }}>
+                Record no. / MRN (optional)
+                <input type="text" value={mrn} onChange={(e) => setMrn(e.target.value)} />
+              </label>
+            </>
+          ) : (
+            <>
+              <label style={{ marginBottom: 8 }}>
+                Search records
+                <input
+                  type="text"
+                  placeholder="Search by name or MRN"
+                  value={patientSearch}
+                  onChange={(e) => setPatientSearch(e.target.value)}
+                />
+              </label>
+              <div className="field">
+                <select
+                  className="select"
+                  value={selectedId ?? ''}
+                  onChange={(e) => setSelectedId(e.target.value || null)}
+                >
+                  <option value="">
+                    {patients.length === 0 ? '— No saved records —' : '— Select a patient —'}
+                  </option>
+                  {patientMatches.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.mrn ? `${p.name} (${p.mrn})` : p.name}
+                    </option>
+                  ))}
+                </select>
+                {patients.length === 0 ? (
+                  <span className="hint">
+                    No saved records yet — switch to New patient to create one.
+                  </span>
+                ) : (
+                  patientMatches.length === 0 && (
+                    <span className="hint">No records match “{patientSearch}”.</span>
+                  )
+                )}
+              </div>
+              {selectedPatient && (
+                <div className="grid2">
+                  <label>
+                    Father / guardian name
+                    <input
+                      type="text"
+                      value={guardianName}
+                      onChange={(e) => setGuardianName(e.target.value)}
+                      onBlur={persistDemographics}
+                    />
+                  </label>
+                  <label>
+                    Record no. / MRN
+                    <input
+                      type="text"
+                      value={mrn}
+                      onChange={(e) => setMrn(e.target.value)}
+                      onBlur={persistDemographics}
+                    />
+                  </label>
+                </div>
+              )}
+            </>
+          )}
 
           <div className="field">
             <span className="field-label">Sex</span>
@@ -1186,43 +1383,22 @@ export default function App() {
             {ageOutOfRange && <span className="warn"> · beyond 20 y (out of chart range)</span>}
           </div>
 
-          <div className="grid2">
-            <label>
-              Father / guardian name (optional)
-              <input
-                type="text"
-                value={guardianName}
-                onChange={(e) => setGuardianName(e.target.value)}
-                onBlur={persistDemographics}
-              />
-            </label>
-            <label>
-              Record no. / MRN (optional)
-              <input
-                type="text"
-                value={mrn}
-                onChange={(e) => setMrn(e.target.value)}
-                onBlur={persistDemographics}
-              />
-            </label>
-          </div>
-
-          {!selectedPatient ? (
+          {recordTab === 'new' && (
             <div className="new-patient">
-              <input
-                type="text"
-                placeholder="New patient name"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-              />
               <button className="primary" onClick={createPatient} disabled={!newName.trim() || !dob}>
                 Create record
               </button>
-              {!dob && <span className="hint">Enter a date of birth above to keep a tracked record.</span>}
+              <span className="hint">
+                {newName.trim() && !dob
+                  ? 'Enter a date of birth above to keep a tracked record.'
+                  : 'Optional — a name + date of birth keeps a tracked record. Otherwise just enter the measurements below for a one-time calculation.'}
+              </span>
             </div>
-          ) : (
+          )}
+
+          {recordTab === 'followup' && selectedPatient && (
             <>
-              <p className="hint" style={{ marginBottom: 8 }}>
+              <p className="hint" style={{ marginBottom: 8, marginTop: 12 }}>
                 Enter measurements and puberty below, then <strong>Save visit</strong> at the foot of
                 the Puberty panel. Use ✎ to correct a saved visit.
               </p>
@@ -1274,52 +1450,6 @@ export default function App() {
               </div>
             </>
           )}
-
-          <div className="backup-bar">
-            <button onClick={onExportData} disabled={patients.length === 0} title="Download all records as a plain JSON backup">
-              Export data
-            </button>
-            <button
-              onClick={() => setAskExportPass(true)}
-              disabled={patients.length === 0}
-              title="Download a passphrase-encrypted backup"
-            >
-              Export encrypted
-            </button>
-            <button onClick={openImportPicker} title="Restore records from a backup file">
-              Import data
-            </button>
-            <input
-              ref={importRef}
-              type="file"
-              accept="application/json,.json"
-              hidden
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void onImportData(f);
-                e.target.value = '';
-              }}
-            />
-          </div>
-
-          <div className="backup-bar security-bar">
-            <button onClick={requestLock} title="Lock the app now and require the PIN">
-              🔒 Lock now
-            </button>
-            {bioAvailable ? (
-              <button
-                onClick={() => void onToggleBiometric()}
-                title="Use fingerprint to unlock on this device"
-              >
-                {bioOn ? 'Disable biometric unlock' : 'Enable biometric unlock'}
-              </button>
-            ) : (
-              <span className="muted bio-reason">
-                Biometric unlock unavailable — {bioReason}
-              </span>
-            )}
-          </div>
-          {importMsg && <p className="hint" role="status">{importMsg}</p>}
         </section>
 
         <section className="panel results" aria-label="Results">
@@ -1518,7 +1648,7 @@ export default function App() {
           <div className="chart-head">
             <h2>Puberty assessment {selectedPatient ? `· ${selectedPatient.name}` : ''}</h2>
             {chronoAgeYears != null && (
-              <span className="src-chip">chrono {chronoAgeYears.toFixed(1)} y</span>
+              <span className="src-chip">Chronological age {chronoAgeYears.toFixed(1)} y</span>
             )}
           </div>
 
