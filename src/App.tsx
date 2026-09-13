@@ -66,8 +66,16 @@ import {
   wipeVault,
 } from './store/vault';
 import { requestLock } from './lock/lockBus';
+import {
+  appLockPausedUntil,
+  onLockPolicyChange,
+  pauseAppLock,
+  resumeAppLock,
+  PAUSE_INDEFINITE,
+} from './lock/lockPolicy';
 import PassphraseDialog from './lock/PassphraseDialog';
 import DeleteDataDialog from './lock/DeleteDataDialog';
+import PauseLockDialog from './lock/PauseLockDialog';
 import UserManual from './help/UserManual';
 import './App.css';
 
@@ -249,6 +257,10 @@ export default function App() {
   const [askExportPass, setAskExportPass] = useState(false);
   const [askWipe, setAskWipe] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  const [pauseLockOpen, setPauseLockOpen] = useState(false);
+  // Mirror the lock-policy module so the menu reflects pause/resume/expiry live.
+  const [lockPausedUntil, setLockPausedUntil] = useState<number | null>(() => appLockPausedUntil());
+  useEffect(() => onLockPolicyChange(() => setLockPausedUntil(appLockPausedUntil())), []);
   const [pendingImportText, setPendingImportText] = useState<string | null>(null);
 
   useEffect(() => {
@@ -912,6 +924,35 @@ export default function App() {
   };
 
   // ---- security actions ----
+  // Human-readable remaining pause, e.g. "2 h 15 min left" or "until you turn it on".
+  const pauseStatusLabel = (until: number): string => {
+    if (until === PAUSE_INDEFINITE) return 'until you turn it on';
+    const ms = until - Date.now();
+    if (ms <= 0) return 'ending…';
+    const mins = Math.round(ms / 60_000);
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    const left = h > 0 ? `${h} h${m ? ` ${m} min` : ''}` : `${m} min`;
+    return `${left} left`;
+  };
+
+  const onPauseLock = (ms: number) => {
+    pauseAppLock(ms);
+    setPauseLockOpen(false);
+    setMenuOpen(false);
+    setImportMsg(
+      ms === PAUSE_INDEFINITE
+        ? 'App lock paused until you turn it back on.'
+        : `App lock paused — ${pauseStatusLabel(Date.now() + ms)}.`,
+    );
+  };
+
+  const onResumeLock = () => {
+    resumeAppLock();
+    setMenuOpen(false);
+    setImportMsg('PIN lock turned back on.');
+  };
+
   const onToggleBiometric = async () => {
     try {
       if (bioOn) {
@@ -1060,7 +1101,7 @@ export default function App() {
                     Import data
                   </button>
                   <div className="menu-sep" />
-                  <span className="menu-head">Security</span>
+                  <span className="menu-head">Security settings</span>
                   <button
                     role="menuitem"
                     onClick={() => {
@@ -1070,6 +1111,26 @@ export default function App() {
                   >
                     🔒 Lock now
                   </button>
+                  {lockPausedUntil !== null ? (
+                    <>
+                      <span className="menu-note">
+                        App lock paused — {pauseStatusLabel(lockPausedUntil)}.
+                      </span>
+                      <button role="menuitem" onClick={onResumeLock}>
+                        🔐 Turn on PIN lock
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setPauseLockOpen(true);
+                      }}
+                    >
+                      ⏸️ Pause app lock…
+                    </button>
+                  )}
                   {bioAvailable ? (
                     <button
                       role="menuitem"
@@ -1863,6 +1924,13 @@ export default function App() {
       )}
       {manualOpen && (
         <UserManual appName={APP_NAME} developer={DEVELOPER} onClose={() => setManualOpen(false)} />
+      )}
+      {pauseLockOpen && (
+        <PauseLockDialog
+          appName={APP_NAME}
+          onPause={onPauseLock}
+          onCancel={() => setPauseLockOpen(false)}
+        />
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { isAutoLockSuspended, lock, vaultExists } from '../store/vault';
 import { onLockRequest } from './lockBus';
+import { isAppLockPaused, onLockPolicyChange, resumeAppLock } from './lockPolicy';
 import LockScreen from './LockScreen';
 
 type Phase = 'setup' | 'locked' | 'unlocked';
@@ -36,6 +37,9 @@ export default function LockGate({ children }: { children: ReactNode }) {
 
     const relock = () => {
       cancelGrace();
+      // Locking supersedes any active pause — after the next unlock the doctor is
+      // back to normal auto-lock, not silently still paused.
+      resumeAppLock();
       lock();
       setPhase('locked');
     };
@@ -43,9 +47,9 @@ export default function LockGate({ children }: { children: ReactNode }) {
     // Backgrounded: don't lock outright. Arm a timer; if the app comes back before
     // it fires we cancel it (a brief switch), and only a sustained absence locks.
     // Skip entirely while a file/share dialog the app itself opened has auto-lock
-    // suspended.
+    // suspended, or while the doctor has paused the lock from Security settings.
     const onHidden = () => {
-      if (isAutoLockSuspended()) return;
+      if (isAutoLockSuspended() || isAppLockPaused()) return;
       if (graceTimer !== undefined) return; // already armed
       graceTimer = window.setTimeout(relock, AUTO_LOCK_GRACE_MS);
     };
@@ -54,16 +58,29 @@ export default function LockGate({ children }: { children: ReactNode }) {
       else cancelGrace();
     };
 
+    // When the pause changes: a fresh pause cancels any armed grace timer; a pause
+    // ending (elapsed or turned off) while the app is in the background re-locks
+    // straight away, so returning to a screen-off phone still lands on the PIN.
+    const onPolicy = () => {
+      if (isAppLockPaused()) {
+        cancelGrace();
+      } else if (document.visibilityState === 'hidden') {
+        relock();
+      }
+    };
+
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pagehide', onHidden);
     window.addEventListener('focus', cancelGrace);
     const offLockRequest = onLockRequest(relock);
+    const offPolicy = onLockPolicyChange(onPolicy);
     return () => {
       cancelGrace();
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('pagehide', onHidden);
       window.removeEventListener('focus', cancelGrace);
       offLockRequest();
+      offPolicy();
     };
   }, [phase]);
 

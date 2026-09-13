@@ -69,10 +69,18 @@ export default function UserManual({ appName, developer, onClose }: Props) {
                 <em>Options → Enable biometric unlock</em> to unlock with fingerprint/face.
               </li>
               <li>
-                <strong>Auto-lock.</strong> The app now stays open while you use it and through brief
+                <strong>Auto-lock.</strong> The app stays open while you use it and through brief
                 switches to other apps (e.g. opening an exported PDF). It re-locks only after it has
                 been in the background for a few minutes, or when the phone is restarted or the app
-                is updated. Use <em>Options → Lock now</em> to lock immediately.
+                is updated. Use <em>Options → Security settings → Lock now</em> to lock immediately.
+              </li>
+              <li>
+                <strong>Pause app lock (for a clinic).</strong>{' '}
+                <em>Options → Security settings → Pause app lock</em> keeps the app unlocked for a
+                chosen window — 30 minutes up to 4 hours, or until you turn it back on — even when the
+                screen turns off, so you aren't re-entering the PIN throughout an OPD session. While
+                paused, anyone who can open the phone can see records, and a restart still re-locks.
+                Turn it off early with <em>Turn on PIN lock</em>.
               </li>
               <li>
                 <strong>Delete all data.</strong> <em>Options → Delete all data</em> permanently
