@@ -2,7 +2,7 @@
 // (jsPDF clinical report), and CSV. All fully offline. jsPDF is loaded on demand
 // (dynamic import) so it stays out of the initial bundle.
 
-import { saveBlob } from './save';
+import { saveBlob, type SaveOutcome } from './save';
 
 // ---- professional multi-page growth report ----
 
@@ -149,12 +149,17 @@ function composeWithHeader(
   return out;
 }
 
-export async function exportChartPng(svg: SVGSVGElement, filename: string, header?: ExportHeader) {
+export async function exportChartPng(
+  svg: SVGSVGElement,
+  filename: string,
+  header?: ExportHeader,
+): Promise<SaveOutcome> {
   const scale = 2.5;
   const chart = await renderChartCanvas(svg, scale);
   const canvas = header ? composeWithHeader(chart, header, scale) : chart;
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
-  if (blob) await saveBlob(blob, filename);
+  if (!blob) throw new Error('could not render PNG');
+  return saveBlob(blob, filename);
 }
 
 /**
@@ -180,7 +185,7 @@ export async function exportGrowthReportPdf(
   report: GrowthReport,
   svgs: ReportChartSvgs,
   filename: string,
-) {
+): Promise<SaveOutcome> {
   const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4', compress: true });
   const pageW = doc.internal.pageSize.getWidth();
@@ -376,7 +381,7 @@ export async function exportGrowthReportPdf(
 
   // doc.save() triggers an <a download> click, which is inert in the Android
   // WebView; go through saveBlob so the native share/save sheet is used there.
-  await saveBlob(doc.output('blob') as Blob, filename);
+  return saveBlob(doc.output('blob') as Blob, filename);
 }
 
 /** Row definitions for the per-visit table, in display order (measure rows carry centiles). */
@@ -554,6 +559,6 @@ export function buildCsv(visits: CsvVisit[]): string {
   return lines.join('\n');
 }
 
-export async function exportCsv(visits: CsvVisit[], filename: string) {
-  await saveBlob(new Blob([buildCsv(visits)], { type: 'text/csv;charset=utf-8' }), filename);
+export async function exportCsv(visits: CsvVisit[], filename: string): Promise<SaveOutcome> {
+  return saveBlob(new Blob([buildCsv(visits)], { type: 'text/csv;charset=utf-8' }), filename);
 }

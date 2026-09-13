@@ -78,8 +78,13 @@ src/engine/               framework-agnostic core
   age.ts                  date-of-birth -> decimal age (months)
   data/references.*       AUTO-GENERATED bundled dataset (do not edit by hand)
 src/components/GrowthChart.tsx   SVG chart
+src/help/UserManual.tsx   in-app user manual (Options -> User manual)
 src/App.tsx               UI
 ```
+
+> **Keep the manual current.** `src/help/UserManual.tsx` ships inside the build and
+> is the user-facing guide. When you add, change, or remove a feature, update the
+> relevant section in the same change and bump its `MANUAL_UPDATED` date.
 
 ## Commands
 

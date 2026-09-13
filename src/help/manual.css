@@ -1,0 +1,122 @@
+.manual-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 16px;
+  background: rgba(15, 23, 42, 0.45);
+  overflow-y: auto;
+}
+
+.manual-card {
+  width: 100%;
+  max-width: 640px;
+  background: #fff;
+  color: #1e293b;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.28);
+  overflow: hidden;
+}
+
+.manual-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  background: #2563eb;
+  color: #fff;
+}
+
+.manual-head h1 {
+  font-size: 17px;
+  margin: 0;
+  font-weight: 700;
+}
+
+.manual-head .manual-close {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.manual-head .manual-close:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.manual-body {
+  padding: 8px 22px 22px;
+}
+
+.manual-body section {
+  padding: 16px 0;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.manual-body section:last-of-type {
+  border-bottom: none;
+}
+
+.manual-body h2 {
+  font-size: 14.5px;
+  margin: 0 0 8px;
+  color: #0f172a;
+}
+
+.manual-body p,
+.manual-body li {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #334155;
+}
+
+.manual-body p {
+  margin: 0 0 8px;
+}
+
+.manual-body ul {
+  margin: 0 0 4px;
+  padding-left: 20px;
+}
+
+.manual-body li {
+  margin-bottom: 5px;
+}
+
+.manual-body strong {
+  color: #0f172a;
+}
+
+.manual-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
+.manual-intro {
+  margin-top: 4px;
+  color: #475569;
+}
+
+.manual-foot {
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid #eef2f7;
+  font-size: 12px;
+  color: #94a3b8;
+}

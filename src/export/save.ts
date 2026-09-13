@@ -51,14 +51,71 @@ function anchorDownload(blob: Blob, filename: string) {
 }
 
 /**
- * Save (and, natively, offer to share) a generated file. Resolves once the file has
- * been handed off; on native a cancelled share sheet resolves normally (the file is
- * already written to cache). Rejects only on a real write/share error.
+ * What happened to the file. `saved` = written somewhere the user can find it
+ * (Downloads, a folder they chose, or the native save/share sheet). `cancelled`
+ * = the user dismissed a Save-As / share dialog and nothing was written. A real
+ * write error rejects instead.
  */
-export async function saveBlob(blob: Blob, filename: string): Promise<void> {
+export type SaveOutcome = 'saved' | 'cancelled';
+
+// The File System Access API (`showSaveFilePicker`) is desktop-Chromium only and
+// not in the TS DOM lib here; describe just the bits we use.
+interface SaveFilePickerAccept { description?: string; accept: Record<string, string[]> }
+type ShowSaveFilePicker = (opts: {
+  suggestedName?: string;
+  types?: SaveFilePickerAccept[];
+}) => Promise<{ createWritable: () => Promise<{ write: (d: Blob) => Promise<void>; close: () => Promise<void> }> }>;
+
+/** MIME → File System Access `types` entry, so the Save-As dialog labels the file sensibly. */
+function pickerTypes(filename: string, mime: string): SaveFilePickerAccept[] {
+  const dot = filename.lastIndexOf('.');
+  const ext = dot >= 0 ? filename.slice(dot) : '';
+  if (!ext) return [];
+  const type = mime.split(';')[0] || 'application/octet-stream';
+  const label =
+    ext === '.pdf' ? 'PDF document'
+    : ext === '.png' ? 'PNG image'
+    : ext === '.csv' ? 'CSV spreadsheet'
+    : ext === '.json' ? 'JSON file'
+    : 'File';
+  return [{ description: label, accept: { [type]: [ext] } }];
+}
+
+/**
+ * Desktop browsers that support the File System Access API: open a real Save-As
+ * dialog so the user chooses the folder and name. Returns null when the API is
+ * unavailable (mobile browsers, Firefox/Safari) so the caller can fall back to a
+ * plain download.
+ */
+async function trySaveAs(blob: Blob, filename: string): Promise<SaveOutcome | null> {
+  const picker = (window as unknown as { showSaveFilePicker?: ShowSaveFilePicker }).showSaveFilePicker;
+  if (typeof picker !== 'function') return null;
+  try {
+    const handle = await picker({ suggestedName: filename, types: pickerTypes(filename, blob.type) });
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return 'saved';
+  } catch (e) {
+    // User dismissed the dialog — treat as a normal cancel, not an error.
+    const name = e instanceof Error ? e.name : '';
+    if (name === 'AbortError' || /abort/i.test(String(e))) return 'cancelled';
+    throw e;
+  }
+}
+
+/**
+ * Save (and, natively, offer to share) a generated file. Resolves with `'saved'`
+ * once the file has been written/handed off, or `'cancelled'` if the user dismissed
+ * a Save-As / share dialog. Rejects only on a real write/share error.
+ */
+export async function saveBlob(blob: Blob, filename: string): Promise<SaveOutcome> {
   if (!Capacitor.isNativePlatform()) {
+    const viaPicker = await trySaveAs(blob, filename);
+    if (viaPicker !== null) return viaPicker;
+    // Mobile browsers / no picker: hand off to the download manager (Downloads).
     anchorDownload(blob, filename);
-    return;
+    return 'saved';
   }
   const base64 = await blobToBase64(blob);
   const written = await Filesystem.writeFile({
@@ -83,16 +140,28 @@ export async function saveBlob(blob: Blob, filename: string): Promise<void> {
       url: written.uri,
       dialogTitle: `Save or share ${filename}`,
     });
+    return 'saved';
   } catch (e) {
     // The user dismissing the share sheet surfaces as a rejection on some devices —
     // treat that as a normal cancel, not an export failure.
     const msg = e instanceof Error ? e.message : String(e);
-    if (/cancel/i.test(msg)) return;
+    if (/cancel/i.test(msg)) return 'cancelled';
     throw e;
   }
 }
 
 /** Convenience wrapper for text payloads (CSV, JSON backups). */
-export async function saveText(text: string, filename: string, mime: string): Promise<void> {
-  await saveBlob(new Blob([text], { type: mime }), filename);
+export async function saveText(text: string, filename: string, mime: string): Promise<SaveOutcome> {
+  return saveBlob(new Blob([text], { type: mime }), filename);
+}
+
+/**
+ * True when a save will land in the browser's Downloads folder with no chance to
+ * pick a location — i.e. a mobile/other browser without the File System Access API
+ * and not the native app. Lets the UI say "Saved to your Downloads folder" only
+ * when that's actually where the file goes.
+ */
+export function savesToDownloads(): boolean {
+  if (Capacitor.isNativePlatform()) return false;
+  return typeof (window as unknown as { showSaveFilePicker?: unknown }).showSaveFilePicker !== 'function';
 }

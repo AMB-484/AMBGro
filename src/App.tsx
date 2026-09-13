@@ -35,7 +35,7 @@ import { PubertyPad } from './components/PubertyPad';
 import { VelocityChart } from './components/VelocityChart';
 import type { VelocityPoint, Milestone } from './components/VelocityChart';
 import { exportChartPng, exportGrowthReportPdf, exportCsv } from './export/chartExport';
-import { saveText } from './export/save';
+import { saveText, savesToDownloads, type SaveOutcome } from './export/save';
 import type {
   CsvVisit,
   GrowthReport,
@@ -68,6 +68,7 @@ import {
 import { requestLock } from './lock/lockBus';
 import PassphraseDialog from './lock/PassphraseDialog';
 import DeleteDataDialog from './lock/DeleteDataDialog';
+import UserManual from './help/UserManual';
 import './App.css';
 
 const APP_NAME = 'AMBGro';
@@ -247,6 +248,7 @@ export default function App() {
   const [bioOn, setBioOn] = useState(false);
   const [askExportPass, setAskExportPass] = useState(false);
   const [askWipe, setAskWipe] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
   const [pendingImportText, setPendingImportText] = useState<string | null>(null);
 
   useEffect(() => {
@@ -648,10 +650,29 @@ export default function App() {
     refSet === 'down' ? 'Down (Zemel)' : refSet === 'turner' ? 'Turner (Isojima)' : segmentLabel;
   const patientLocked = selectedPatient != null;
 
-  const nameSlug = selectedPatient
-    ? selectedPatient.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()
-    : sex;
-  const fileBase = `growth_${nameSlug}_${ageMode === 'dob' ? visit : today}`;
+  // Clinician-legible export base: `PatientName_V{visitCount}_{date}` for a saved
+  // patient (date = the latest visit), or `Sex_{date}` for an ad-hoc measurement.
+  // Name is stripped to alphanumerics (case preserved) so it is one filename token.
+  const exportBase = (() => {
+    if (selectedPatient) {
+      const nm = selectedPatient.name.replace(/[^a-z0-9]+/gi, '') || 'Patient';
+      const n = selectedPatient.visits.length;
+      const latest = sortedVisits(selectedPatient).at(-1)?.date ?? today;
+      return n > 0 ? `${nm}_V${n}_${latest}` : `${nm}_${latest}`;
+    }
+    return `${sex}_${ageMode === 'dob' ? visit : today}`;
+  })();
+
+  // Turn a save outcome into a status message. Only "saved" flags Downloads (and
+  // only when that is genuinely where the file lands); a cancelled Save-As is silent.
+  const announceSave = (outcome: SaveOutcome, filename: string) => {
+    if (outcome === 'cancelled') return;
+    setImportMsg(
+      savesToDownloads()
+        ? `Saved “${filename}” to your Downloads folder.`
+        : `Saved “${filename}”.`,
+    );
+  };
 
   // ---- record actions ----
   const createPatient = () => {
@@ -825,21 +846,27 @@ export default function App() {
     };
   };
 
-  const onExportPng = () => {
+  const onExportPng = async () => {
     const svg = getSvg();
     if (!svg) return;
     const subtitle = showVelocity
       ? `Height velocity · ${sex}${selectedPatient ? ` · ${selectedPatient.name}` : ''}`
       : `${measureMeta.label}-for-age · ${sourceLabel} · ${sex}${selectedPatient ? ` · ${selectedPatient.name}` : ''}`;
-    void exportChartPng(svg, `${fileBase}_${showVelocity ? 'velocity' : chartMeasure}.png`, {
-      title: APP_NAME,
-      byline: `by ${DEVELOPER}`,
-      subtitle,
-    });
+    const filename = `${exportBase}_${showVelocity ? 'velocity' : chartMeasure}.png`;
+    try {
+      const outcome = await exportChartPng(svg, filename, {
+        title: APP_NAME,
+        byline: `by ${DEVELOPER}`,
+        subtitle,
+      });
+      announceSave(outcome, filename);
+    } catch {
+      setImportMsg('Could not export the chart image.');
+    }
   };
   // Full clinical report (PDF): all four charts + demographics + per-visit table.
   // Charts are grabbed from the hidden report scaffold (rendered for every measure).
-  const onExportReport = () => {
+  const onExportReport = async () => {
     const report = buildGrowthReport();
     if (!report) return;
     const c = reportChartsRef.current;
@@ -851,9 +878,15 @@ export default function App() {
       bmi: pick('bmi'),
       velocity: pick('velocity'),
     };
-    void exportGrowthReportPdf(report, svgs, `${fileBase}_report.pdf`);
+    const filename = `${exportBase}.pdf`;
+    try {
+      const outcome = await exportGrowthReportPdf(report, svgs, filename);
+      announceSave(outcome, filename);
+    } catch {
+      setImportMsg('Could not export the PDF report.');
+    }
   };
-  const onExportCsv = () => {
+  const onExportCsv = async () => {
     const rows = selectedPatient
       ? sortedVisits(selectedPatient).map((v) =>
           csvForVisit(
@@ -868,7 +901,14 @@ export default function App() {
       : effAge != null
         ? [csvForVisit(ageMode === 'dob' ? visit : today, effAge, heightCm, weightKg, sex, refSet)]
         : [];
-    if (rows.length) void exportCsv(rows, `${fileBase}.csv`);
+    if (!rows.length) return;
+    const filename = `${exportBase}.csv`;
+    try {
+      const outcome = await exportCsv(rows, filename);
+      announceSave(outcome, filename);
+    } catch {
+      setImportMsg('Could not export the CSV.');
+    }
   };
 
   // ---- security actions ----
@@ -1043,6 +1083,17 @@ export default function App() {
                   ) : (
                     <span className="menu-note">Biometric unlock unavailable — {bioReason}</span>
                   )}
+                  <div className="menu-sep" />
+                  <span className="menu-head">Help</span>
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setManualOpen(true);
+                    }}
+                  >
+                    📖 User manual
+                  </button>
                   <div className="menu-sep" />
                   <button
                     role="menuitem"
@@ -1809,6 +1860,9 @@ export default function App() {
           onConfirm={() => void onWipeAll()}
           onCancel={() => setAskWipe(false)}
         />
+      )}
+      {manualOpen && (
+        <UserManual appName={APP_NAME} developer={DEVELOPER} onClose={() => setManualOpen(false)} />
       )}
     </div>
   );
