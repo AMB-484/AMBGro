@@ -243,6 +243,25 @@ export function lock(): void {
   snapshot = [];
 }
 
+/**
+ * Permanently delete the vault and every patient record from this device, drop
+ * the in-memory session, and remove any biometric-stored key from the OS
+ * keystore. Irreversible — there is no cloud copy. After this, vaultExists()
+ * is false and the app returns to first-run setup.
+ */
+export async function wipeVault(): Promise<void> {
+  // Best-effort: clear the biometric-wrapped DEK (native only; a no-op on the
+  // web). Proceed with local deletion even if this fails.
+  try {
+    await clearSecret();
+  } catch {
+    // ignore
+  }
+  localStorage.removeItem(VAULT_KEY);
+  localStorage.removeItem(LEGACY_KEY);
+  lock();
+}
+
 /** Encrypt and persist the patient list. Returns false if locked or storage fails. */
 export async function persist(patients: Patient[]): Promise<boolean> {
   if (!dek) return false;

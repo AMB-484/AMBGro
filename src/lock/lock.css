@@ -101,6 +101,11 @@
   margin-top: 10px;
 }
 
+.lock-btn.danger {
+  background: #dc2626;
+  color: #fff;
+}
+
 .lock-link {
   display: inline-block;
   margin-top: 16px;

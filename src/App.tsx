@@ -63,9 +63,11 @@ import {
   biometricEnabled,
   enableBiometric,
   disableBiometric,
+  wipeVault,
 } from './store/vault';
 import { requestLock } from './lock/lockBus';
 import PassphraseDialog from './lock/PassphraseDialog';
+import DeleteDataDialog from './lock/DeleteDataDialog';
 import './App.css';
 
 const APP_NAME = 'AMBGro';
@@ -244,6 +246,7 @@ export default function App() {
   const [bioReason, setBioReason] = useState('');
   const [bioOn, setBioOn] = useState(false);
   const [askExportPass, setAskExportPass] = useState(false);
+  const [askWipe, setAskWipe] = useState(false);
   const [pendingImportText, setPendingImportText] = useState<string | null>(null);
 
   useEffect(() => {
@@ -883,6 +886,14 @@ export default function App() {
     }
   };
 
+  const onWipeAll = async () => {
+    setAskWipe(false);
+    await wipeVault();
+    // Reload so the LockGate re-evaluates (no vault → first-run setup); this
+    // makes the cleared state unambiguous and drops all in-memory data.
+    window.location.reload();
+  };
+
   // ---- backup / restore (full patient database) ----
   const onExportData = async () => {
     if (patients.length === 0) return;
@@ -1032,6 +1043,17 @@ export default function App() {
                   ) : (
                     <span className="menu-note">Biometric unlock unavailable — {bioReason}</span>
                   )}
+                  <div className="menu-sep" />
+                  <button
+                    role="menuitem"
+                    className="danger"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setAskWipe(true);
+                    }}
+                  >
+                    Delete all data
+                  </button>
                 </div>
               </>
             )}
@@ -1779,6 +1801,13 @@ export default function App() {
           confirmLabel="Decrypt & import"
           onSubmit={(p) => void onImportEncrypted(p)}
           onCancel={() => setPendingImportText(null)}
+        />
+      )}
+      {askWipe && (
+        <DeleteDataDialog
+          count={patients.length}
+          onConfirm={() => void onWipeAll()}
+          onCancel={() => setAskWipe(false)}
         />
       )}
     </div>
