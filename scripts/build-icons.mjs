@@ -131,6 +131,27 @@ function featureSvg() {
   );
 }
 
+/**
+ * Link-preview image (Open Graph / Twitter card) shown when the site URL is
+ * shared in WhatsApp, Facebook, LinkedIn, Slack, etc. 1200×630 is the size every
+ * major platform crops cleanly; referenced by absolute URL from index.html.
+ * Everything is centred so WhatsApp's small square thumbnail (a centre crop)
+ * still shows the mark and the name.
+ */
+function socialSvg() {
+  const font = 'Segoe UI, Arial, Helvetica, sans-serif';
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">` +
+    `<rect width="1200" height="630" fill="${BRAND}"/>` +
+    `<g transform="translate(600 225) scale(0.66) translate(-256 -256)">` +
+    art(1) +
+    `</g>` +
+    `<text x="600" y="455" text-anchor="middle" font-family="${font}" font-size="110" font-weight="700" fill="${WHITE}">AMBGro</text>` +
+    `<text x="600" y="525" text-anchor="middle" font-family="${font}" font-size="36" fill="${WHITE}" fill-opacity=".85">Digital growth charts · WHO &amp; CDC</text>` +
+    `</svg>`
+  );
+}
+
 async function render(svgText, file, opaque) {
   await mkdir(dirname(file), { recursive: true });
   let pipe = sharp(Buffer.from(svgText));
@@ -157,6 +178,9 @@ async function main() {
 
   await render(featureSvg(), 'store/play-feature-1024x500.png', true);
   console.log('   —  store/play-feature-1024x500.png');
+
+  await render(socialSvg(), 'public/og-image.png', true);
+  console.log('   —  public/og-image.png');
 
   if (hasAndroid) {
     // The adaptive icon draws this colour behind the (transparent) foreground.
